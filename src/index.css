@@ -1,0 +1,99 @@
+@import "tailwindcss";
+
+@layer utilities {
+  .font-chakra {
+    font-family: 'Chakra Petch', monospace, sans-serif;
+  }
+  .font-tajawal {
+    font-family: 'Tajawal', sans-serif;
+  }
+}
+
+/* Metallic gold button with tactile physical feel */
+.btn-gold {
+  background: linear-gradient(180deg, #fce289 0%, #d4af37 45%, #aa8420 100%);
+  color: #121008;
+  font-weight: 700;
+  text-shadow: 0 1px 0 rgba(255, 255, 255, 0.4);
+  box-shadow: 0 4px 12px rgba(212, 175, 55, 0.25), 0 2px 0 #7e6013, inset 0 1px 1px rgba(255, 255, 255, 0.6);
+  border: 1px solid #e2be52;
+  transition: all 0.12s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.btn-gold:hover:not(:disabled) {
+  background: linear-gradient(180deg, #fff0a8 0%, #e0bd45 45%, #b58d24 100%);
+  box-shadow: 0 6px 16px rgba(212, 175, 55, 0.35), 0 2px 0 #7e6013, inset 0 1px 1px rgba(255, 255, 255, 0.8);
+}
+
+.btn-gold:active:not(:disabled) {
+  transform: translateY(3px);
+  box-shadow: 0 1px 4px rgba(212, 175, 55, 0.2), 0 0 0 #7e6013, inset 0 2px 4px rgba(0, 0, 0, 0.2);
+}
+
+.btn-gold:disabled {
+  background: linear-gradient(180deg, #3a3832 0%, #292823 100%);
+  color: #6d6b63;
+  box-shadow: none;
+  border-color: #3f3e37;
+  cursor: not-allowed;
+  transform: none;
+}
+
+/* Secondary dark metallic button */
+.btn-dark {
+  background: linear-gradient(180deg, #1f2229 0%, #13151a 100%);
+  color: #e4e4e7;
+  border: 1px solid rgba(212, 175, 55, 0.2);
+  box-shadow: 0 3px 8px rgba(0, 0, 0, 0.4), 0 1px 0 rgba(255, 255, 255, 0.05);
+  transition: all 0.12s ease;
+}
+
+.btn-dark:hover:not(:disabled) {
+  border-color: rgba(212, 175, 55, 0.4);
+  background: linear-gradient(180deg, #262a33 0%, #171a21 100%);
+}
+
+.btn-dark:active:not(:disabled) {
+  transform: translateY(2px);
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.4);
+}
+
+/* Pitch tactical field pattern */
+.tactical-pitch {
+  background: 
+    linear-gradient(rgba(14, 43, 27, 0.94), rgba(9, 29, 18, 0.96)),
+    repeating-linear-gradient(
+      0deg,
+      transparent,
+      transparent 32px,
+      rgba(255, 255, 255, 0.02) 32px,
+      rgba(255, 255, 255, 0.02) 64px
+    );
+  border: 1px solid rgba(212, 175, 55, 0.2);
+}
+
+/* Card shimmer */
+@keyframes shimmer {
+  0% { transform: translateX(-100%); }
+  100% { transform: translateX(100%); }
+}
+
+.animate-shimmer {
+  animation: shimmer 2.5s infinite;
+}
+
+/* Safe scrollbars */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+::-webkit-scrollbar-track {
+  background: #09090b;
+}
+::-webkit-scrollbar-thumb {
+  background: #27272a;
+  border-radius: 9999px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: #d4af37;
+}
