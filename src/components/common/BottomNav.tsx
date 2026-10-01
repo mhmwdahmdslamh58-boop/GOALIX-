@@ -29,9 +29,10 @@ export const BottomNav: React.FC<BottomNavProps> = ({ currentTab, onChangeTab })
             <button
               key={tab.id}
               onClick={() => {
-                sounds.playTap();
+                sounds.playButtonClick();
                 onChangeTab(tab.id);
               }}
+              onMouseEnter={() => sounds.playButtonHover()}
               className={`flex flex-col items-center justify-center h-full min-h-[44px] transition-all cursor-pointer relative px-0.5 ${
                 isActive ? 'text-amber-400' : 'text-zinc-500 hover:text-zinc-300'
               }`}

@@ -3,9 +3,10 @@ import { CardTier, Player, UserProfile } from '../../types/game';
 import { openPackReward } from '../../data/players';
 import { deductCoinsFromUser, addPlayerToCollection, getUserSquad, saveUserSquad } from '../../services/storage';
 import { PackOpeningModal } from './PackOpeningModal';
+import { Pack3DView } from './Pack3DView';
 import { GoldButton } from '../common/GoldButton';
 import { sounds } from '../../services/audio';
-import { Coins, Sparkles, Shield, AlertCircle, ShoppingBag } from 'lucide-react';
+import { Coins, Sparkles, Shield, AlertCircle, ShoppingBag, Zap, Crown } from 'lucide-react';
 
 interface StoreScreenProps {
   userProfile: UserProfile;
@@ -119,49 +120,61 @@ export const StoreScreen: React.FC<StoreScreenProps> = ({ userProfile, onCoinsUp
       )}
 
       {/* Packs List */}
-      <div className="space-y-3">
+      <div className="space-y-4">
         {packs.map(pack => (
           <div
             key={pack.tier}
-            className={`rounded-2xl p-4 border ${pack.border} bg-gradient-to-b ${pack.bgGradient} shadow-xl flex flex-col justify-between space-y-3 relative overflow-hidden`}
+            className={`rounded-3xl p-4 sm:p-5 border ${pack.border} bg-gradient-to-b ${pack.bgGradient} shadow-2xl flex flex-col justify-between space-y-4 relative overflow-hidden`}
           >
-            {/* Subtle glow circle */}
-            <div className="absolute top-0 right-0 w-32 h-32 bg-amber-500/5 rounded-full blur-2xl pointer-events-none" />
+            {/* Ambient Background Light */}
+            <div className="absolute top-0 right-0 w-44 h-44 bg-amber-500/10 rounded-full blur-3xl pointer-events-none" />
 
-            <div className="flex items-start justify-between">
+            {/* Pack Title & OVR Range */}
+            <div className="flex items-start justify-between relative z-10">
               <div>
-                <span className="text-[10px] font-chakra font-bold text-amber-400 uppercase tracking-wider block">
+                <span className="text-[10px] font-chakra font-bold text-amber-400 uppercase tracking-widest block">
                   {pack.name}
                 </span>
-                <h4 className="text-base font-bold font-tajawal text-zinc-100 mt-0.5">
+                <h4 className="text-base sm:text-lg font-black font-tajawal text-white mt-0.5">
                   {pack.nameAr}
                 </h4>
-                <p className="text-xs text-zinc-400 font-tajawal mt-1">{pack.descAr}</p>
+                <p className="text-xs text-zinc-300 font-tajawal mt-1">{pack.descAr}</p>
               </div>
 
-              <div className="text-center px-2.5 py-1 bg-black/60 rounded-xl border border-amber-500/30 shrink-0">
-                <span className="text-[9px] text-zinc-400 font-chakra block">OVR RANGE</span>
+              <div className="text-center px-3 py-1.5 bg-black/70 rounded-2xl border border-amber-500/30 shrink-0">
+                <span className="text-[9px] text-zinc-400 font-chakra block">ضمان التقييم</span>
                 <span className="font-chakra font-black text-amber-300 text-sm">
                   {pack.ovrRange}
                 </span>
               </div>
             </div>
 
-            {/* Featured stars snippet */}
-            <div className="text-[11px] text-zinc-400 font-tajawal pt-1 border-t border-white/5">
-              <span>نجوم الحزمة المحتملون: </span>
-              <span className="text-zinc-200 font-medium">{pack.featured}</span>
+            {/* LUXURY 3D PACK DISPLAY */}
+            <div className="py-2 flex items-center justify-center relative z-10">
+              <Pack3DView
+                tier={pack.tier}
+                ovrRange={pack.ovrRange}
+                name={pack.name}
+              />
             </div>
 
-            {/* Buy Button */}
-            <GoldButton
-              onClick={() => handleBuyPack(pack.tier, pack.price)}
-              fullWidth
-              size="md"
-            >
-              <Coins className="w-4 h-4 text-zinc-950" />
-              <span>{pack.btnText}</span>
-            </GoldButton>
+            {/* Featured stars snippet */}
+            <div className="text-[11px] text-zinc-300 font-tajawal pt-2 border-t border-white/10 relative z-10">
+              <span className="text-amber-400 font-bold">النجوم المحتملون: </span>
+              <span className="text-zinc-200">{pack.featured}</span>
+            </div>
+
+            {/* Buy & Spin Casino Button */}
+            <div className="relative z-10">
+              <GoldButton
+                onClick={() => handleBuyPack(pack.tier, pack.price)}
+                fullWidth
+                size="md"
+              >
+                <Coins className="w-4 h-4 text-zinc-950" />
+                <span>{pack.btnText} · سحب كازينو 🎰</span>
+              </GoldButton>
+            </div>
           </div>
         ))}
       </div>

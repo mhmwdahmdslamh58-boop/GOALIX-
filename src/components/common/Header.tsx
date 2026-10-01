@@ -1,24 +1,31 @@
 import React, { useState } from 'react';
-import { Coins, Volume2, VolumeX, User, Wifi } from 'lucide-react';
+import { Coins, Volume2, VolumeX, User, Wifi, ShieldCheck, LogIn, Crown } from 'lucide-react';
 import { sounds } from '../../services/audio';
 import { UserProfile } from '../../types/game';
+import { isDeveloperAdmin } from '../../services/auth';
 
 interface HeaderProps {
   userProfile: UserProfile;
   onOpenProfile: () => void;
   onOpenStore: () => void;
   onOpenRooms: () => void;
+  onOpenAuth?: () => void;
+  onOpenAdmin?: () => void;
 }
 
 export const Header: React.FC<HeaderProps> = ({
   userProfile,
   onOpenProfile,
   onOpenStore,
-  onOpenRooms
+  onOpenRooms,
+  onOpenAuth,
+  onOpenAdmin
 }) => {
   const [soundOn, setSoundOn] = useState(sounds.isEnabled());
+  const isAdmin = isDeveloperAdmin(userProfile);
 
   const handleToggleSound = () => {
+    sounds.playButtonClick();
     const next = sounds.toggleSound();
     setSoundOn(next);
   };
@@ -40,11 +47,47 @@ export const Header: React.FC<HeaderProps> = ({
       </div>
 
       {/* Zone 2: Actions & Balance */}
-      <div className="flex items-center gap-2">
+      <div className="flex items-center gap-1.5 sm:gap-2">
+        {/* Admin & Private Database Room (for Developer / Admin) */}
+        {isAdmin && onOpenAdmin && (
+          <button
+            onClick={() => {
+              sounds.playButtonClick();
+              onOpenAdmin();
+            }}
+            onMouseEnter={() => sounds.playButtonHover()}
+            className="flex items-center gap-1 py-1 px-2 rounded-lg bg-gradient-to-r from-amber-500/25 to-yellow-500/30 border border-amber-400 text-amber-300 text-xs font-bold font-tajawal hover:opacity-90 active:scale-95 transition-all cursor-pointer shadow-[0_0_10px_rgba(212,175,55,0.3)]"
+            title="غرفة الإدارة وقاعدة البيانات الخاصة بي"
+          >
+            <Crown className="w-3.5 h-3.5 text-amber-400" />
+            <span className="font-bold">الإدارة</span>
+          </button>
+        )}
+
+        {/* Login / Auth Button */}
+        {onOpenAuth && (
+          <button
+            onClick={() => {
+              sounds.playButtonClick();
+              onOpenAuth();
+            }}
+            onMouseEnter={() => sounds.playButtonHover()}
+            className="flex items-center gap-1 py-1 px-2 rounded-lg bg-zinc-900 border border-zinc-700/80 hover:border-amber-400/60 text-xs text-zinc-300 transition-all cursor-pointer"
+            title="تسجيل الدخول / تبديل الحساب"
+          >
+            <LogIn className="w-3.5 h-3.5 text-amber-400" />
+            <span className="hidden sm:inline font-medium">تسجيل</span>
+          </button>
+        )}
+
         {/* Rooms Shortcut Button */}
         <button
-          onClick={onOpenRooms}
-          className="flex items-center gap-1.5 py-1 px-2.5 rounded-lg bg-zinc-900 border border-amber-500/30 text-amber-300 text-xs font-tajawal hover:bg-zinc-800 active:translate-y-0.5 transition-all"
+          onClick={() => {
+            sounds.playButtonClick();
+            onOpenRooms();
+          }}
+          onMouseEnter={() => sounds.playButtonHover()}
+          className="flex items-center gap-1.5 py-1 px-2.5 rounded-lg bg-zinc-900 border border-amber-500/30 text-amber-300 text-xs font-tajawal hover:bg-zinc-800 active:translate-y-0.5 transition-all cursor-pointer"
           title="غرف الأونلاين"
         >
           <Wifi className="w-3.5 h-3.5 text-amber-400" />
@@ -53,8 +96,12 @@ export const Header: React.FC<HeaderProps> = ({
 
         {/* Coins Badge (Clickable to Store) */}
         <button
-          onClick={onOpenStore}
-          className="flex items-center gap-1.5 py-1 px-2.5 rounded-lg bg-amber-950/40 border border-amber-500/40 hover:border-amber-400/80 active:translate-y-0.5 transition-all text-amber-300 font-chakra font-bold text-xs"
+          onClick={() => {
+            sounds.playButtonClick();
+            onOpenStore();
+          }}
+          onMouseEnter={() => sounds.playButtonHover()}
+          className="flex items-center gap-1.5 py-1 px-2.5 rounded-lg bg-amber-950/40 border border-amber-500/40 hover:border-amber-400/80 active:translate-y-0.5 transition-all text-amber-300 font-chakra font-bold text-xs cursor-pointer"
           title="متجر الكوينز"
         >
           <Coins className="w-3.5 h-3.5 text-amber-400" />
@@ -64,7 +111,8 @@ export const Header: React.FC<HeaderProps> = ({
         {/* Sound Toggle */}
         <button
           onClick={handleToggleSound}
-          className="w-8 h-8 rounded-lg bg-zinc-900 border border-zinc-800 flex items-center justify-center text-zinc-400 hover:text-zinc-200 active:scale-95 transition-all"
+          onMouseEnter={() => sounds.playButtonHover()}
+          className="w-8 h-8 rounded-lg bg-zinc-900 border border-zinc-800 flex items-center justify-center text-zinc-400 hover:text-zinc-200 active:scale-95 transition-all cursor-pointer"
           title={soundOn ? 'كتم الصوت' : 'تشغيل الصوت'}
         >
           {soundOn ? <Volume2 className="w-4 h-4 text-amber-400/80" /> : <VolumeX className="w-4 h-4 text-zinc-500" />}
@@ -72,8 +120,12 @@ export const Header: React.FC<HeaderProps> = ({
 
         {/* Profile Avatar */}
         <button
-          onClick={onOpenProfile}
-          className="w-8 h-8 rounded-lg bg-zinc-800 border border-amber-500/30 overflow-hidden flex items-center justify-center hover:border-amber-400 transition-all active:scale-95"
+          onClick={() => {
+            sounds.playButtonClick();
+            onOpenProfile();
+          }}
+          onMouseEnter={() => sounds.playButtonHover()}
+          className="w-8 h-8 rounded-lg bg-zinc-800 border border-amber-500/30 overflow-hidden flex items-center justify-center hover:border-amber-400 transition-all active:scale-95 cursor-pointer"
           title="الملف الشخصي"
         >
           {userProfile.avatar ? (

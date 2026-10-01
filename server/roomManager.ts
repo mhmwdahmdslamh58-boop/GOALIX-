@@ -11,6 +11,8 @@ import { getQuestionsForGame } from '../src/data/questions';
 import { getRandomPlayerByPosition, getRandomPlayerByClubAndPosition } from '../src/data/players';
 import { getRandomClubsForRound } from '../src/data/clubs';
 import { getPositionOrder, QUICK_FIVE_POSITIONS, FULL_ELEVEN_POSITIONS } from '../src/services/positions';
+import { rankingManager } from './rankingManager';
+import { adminDb } from './adminDb';
 
 interface RoomSubscriber {
   id: string;
@@ -33,6 +35,10 @@ class RoomManager {
 
   public getRoom(code: string): OnlineRoomState | undefined {
     return this.rooms.get(code.toUpperCase());
+  }
+
+  public getAllRooms(): OnlineRoomState[] {
+    return Array.from(this.rooms.values());
   }
 
   public subscribe(code: string, subId: string, callback: (state: OnlineRoomState) => void) {
@@ -366,6 +372,29 @@ class RoomManager {
     room.phase = 'MATCH_FINISHED';
     room.simulationResult = { hostGoals, guestGoals, winnerId };
     room.updatedAt = Date.now();
+
+    // Authoritatively award official room points (Win: 3, Draw: 1, Loss: 0)
+    if (room.participants.guest) {
+      rankingManager.recordRoomMatch(
+        room.hostId,
+        room.participants.host.name,
+        undefined,
+        hostGoals,
+        room.participants.guest.id,
+        room.participants.guest.name,
+        undefined,
+        guestGoals
+      );
+
+      adminDb.addMatchLog(
+        room.code,
+        room.participants.host.name,
+        room.participants.guest.name,
+        `${hostGoals} - ${guestGoals}`,
+        winnerId === 'draw' ? 'تعادل' : (winnerId === room.hostId ? room.participants.host.name : room.participants.guest.name)
+      );
+    }
+
     this.broadcast(room);
     return room;
   }

@@ -19,7 +19,7 @@ import {
 
 interface HomeScreenProps {
   userProfile: UserProfile;
-  onNavigateTab: (tab: 'games' | 'squad' | 'store') => void;
+  onNavigateTab: (tab: 'games' | 'squad' | 'store' | 'ranking' | 'rooms') => void;
   onSelectGame: (gameId: 'stat_arena' | 'santra') => void;
   onOpenOnlineRooms: () => void;
   onSelectPlayer: (player: Player) => void;
@@ -99,6 +99,33 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
             <h4 className="font-bold text-xs text-zinc-100 font-tajawal">غرف الأونلاين</h4>
             <span className="text-[10px] text-zinc-400 font-tajawal">تحديات مباشرة برمز</span>
           </div>
+        </div>
+      </div>
+
+      {/* ================= LEAGUE RANKING SHORTCUT ================= */}
+      <div 
+        onClick={() => {
+          sounds.playButtonClick();
+          onNavigateTab('ranking');
+        }}
+        className="bg-gradient-to-r from-amber-950/40 via-zinc-900 to-zinc-950 rounded-2xl p-3.5 border border-amber-500/30 flex items-center justify-between cursor-pointer hover:border-amber-400/60 active:scale-98 transition-all shadow-lg"
+      >
+        <div className="flex items-center gap-3">
+          <div className="w-10 h-10 rounded-xl bg-amber-500/20 border border-amber-500/40 flex items-center justify-center shrink-0">
+            <Trophy className="w-5 h-5 text-amber-400" />
+          </div>
+          <div>
+            <div className="flex items-center gap-1.5">
+              <h4 className="font-bold text-xs text-white font-tajawal">جدول ترتيب دوري الغرف</h4>
+              <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
+              <span className="text-[9px] text-emerald-400 font-bold">مباشر</span>
+            </div>
+            <p className="text-[10px] text-zinc-400 font-tajawal">الفوز = 3 نقاط · التعادل = نقطة واحدة</p>
+          </div>
+        </div>
+        <div className="flex items-center gap-1 text-xs text-amber-300 font-bold font-tajawal">
+          <span>الترتيب</span>
+          <ArrowLeft className="w-3.5 h-3.5" />
         </div>
       </div>
 
@@ -274,6 +301,26 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
             </div>
           ))}
         </div>
+      </div>
+
+      {/* ================= 8. DEVELOPER ATTRIBUTION ================= */}
+      <div className="bg-gradient-to-b from-zinc-900/90 to-black rounded-2xl p-4 border border-amber-500/30 text-center space-y-1.5 shadow-xl relative overflow-hidden">
+        <div className="absolute top-0 left-0 right-0 h-[1px] bg-gradient-to-r from-transparent via-amber-400/50 to-transparent" />
+        <div className="flex items-center justify-center gap-1.5 text-amber-400">
+          <Shield className="w-3.5 h-3.5" />
+          <span className="text-[11px] font-bold font-tajawal tracking-wide">
+            فكرة وتطوير وإشراف المطور
+          </span>
+        </div>
+        <h3 className="text-base font-black font-tajawal text-white tracking-wider">
+          محمود أحمد سلامة
+        </h3>
+        <p className="text-[10px] text-zinc-400 font-chakra dir-ltr">
+          Mahmoud Ahmed Salama · GOALIX Lead Developer
+        </p>
+        <p className="text-[10px] text-zinc-500 font-tajawal pt-1">
+          منصة كرة القدم التنافسية الذكية © 2026 · جميع الحقوق محفوظة
+        </p>
       </div>
     </div>
   );

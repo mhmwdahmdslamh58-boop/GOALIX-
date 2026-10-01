@@ -1,505 +1,436 @@
-import React, { useState, useEffect } from 'react';
-import { UserProfile, PastWinnerMedal } from '../../types/game';
+import React, { useState, useEffect, useRef } from 'react';
+import { UserProfile } from '../../types/game';
 import { sounds } from '../../services/audio';
 import { GoldButton } from '../common/GoldButton';
+import { 
+  fetchOnlineRanking, 
+  syncUserRankingProfile, 
+  RankedPlayer 
+} from '../../services/rankingApi';
 import { 
   Trophy, 
   Crown, 
   Medal, 
-  Coins, 
-  Clock, 
-  ArrowRight, 
-  Sparkles, 
-  Award, 
+  Wifi, 
+  RefreshCw, 
   TrendingUp, 
-  User, 
-  ShieldCheck,
-  Calendar
+  ShieldCheck, 
+  Sparkles,
+  Info,
+  Flame,
+  ArrowUpRight
 } from 'lucide-react';
 
 interface RankingScreenProps {
   userProfile: UserProfile;
-  onBack: () => void;
-  onOpenStore?: () => void;
-}
-
-type RankingTimeframe = 'daily' | 'weekly' | 'monthly';
-
-interface LeaderboardUser {
-  rank: number;
-  id: string;
-  username: string;
-  avatar: string;
-  coins: number;
-  bestRank: number;
-  badge?: string;
-  countryFlag?: string;
-  isCurrentUser?: boolean;
+  onBack?: () => void;
+  onOpenRooms?: () => void;
 }
 
 export const RankingScreen: React.FC<RankingScreenProps> = ({
   userProfile,
-  onBack,
-  onOpenStore
+  onOpenRooms
 }) => {
-  const [timeframe, setTimeframe] = useState<RankingTimeframe>('weekly');
-  const [activeTabSection, setActiveTabSection] = useState<'leaderboard' | 'hall_of_fame' | 'rewards'>('leaderboard');
-  const [timeLeft, setTimeLeft] = useState<{ hours: number; minutes: number; seconds: number }>({
-    hours: 14,
-    minutes: 32,
-    seconds: 45
-  });
+  const [players, setPlayers] = useState<RankedPlayer[]>([]);
+  const [currentUserRank, setCurrentUserRank] = useState<RankedPlayer | null>(null);
+  const [isLoading, setIsLoading] = useState(true);
+  const [isRefreshing, setIsRefreshing] = useState(false);
+  const [lastUpdated, setLastUpdated] = useState<number>(Date.now());
+  const [secondsUntilNextRefresh, setSecondsUntilNextRefresh] = useState(5);
+  const [errorMsg, setErrorMsg] = useState<string | null>(null);
 
-  // Countdown timer simulation
+  // Sync user profile on mount
   useEffect(() => {
-    const timer = setInterval(() => {
-      setTimeLeft(prev => {
-        if (prev.seconds > 0) return { ...prev, seconds: prev.seconds - 1 };
-        if (prev.minutes > 0) return { ...prev, minutes: 59, seconds: 59 };
-        if (prev.hours > 0) return { hours: prev.hours - 1, minutes: 59, seconds: 59 };
-        return { hours: 23, minutes: 59, seconds: 59 };
-      });
+    syncUserRankingProfile(userProfile.id, userProfile.username, userProfile.avatar).catch(() => {});
+  }, [userProfile.id, userProfile.username, userProfile.avatar]);
+
+  // Main polling function: fetches server rankings every 5 seconds
+  const loadRanking = async (isManual = false) => {
+    if (isManual) setIsRefreshing(true);
+    try {
+      const data = await fetchOnlineRanking(userProfile.id);
+      setPlayers(data.players);
+      if (data.currentUser) {
+        setCurrentUserRank(data.currentUser);
+      } else {
+        const found = data.players.find(p => p.id === userProfile.id);
+        if (found) setCurrentUserRank(found);
+      }
+      setLastUpdated(data.lastUpdated);
+      setErrorMsg(null);
+    } catch {
+      setErrorMsg('تعذر جلب جدول الترتيب المباشر من الخادم');
+    } finally {
+      setIsLoading(false);
+      setIsRefreshing(false);
+      setSecondsUntilNextRefresh(5);
+    }
+  };
+
+  // Initial load
+  useEffect(() => {
+    loadRanking();
+  }, [userProfile.id]);
+
+  // Server Poll: Exactly every 5 seconds as requested
+  useEffect(() => {
+    const pollInterval = setInterval(() => {
+      loadRanking();
+    }, 5000);
+
+    // 1-second countdown visual tick for live polling feedback
+    const tickInterval = setInterval(() => {
+      setSecondsUntilNextRefresh(prev => (prev > 1 ? prev - 1 : 5));
     }, 1000);
-    return () => clearInterval(timer);
-  }, []);
 
-  // Community Leaderboard Data
-  const baseCommunityUsers: Omit<LeaderboardUser, 'rank'>[] = [
-    { id: 'u1', username: 'المايسترو زيد', avatar: 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?auto=format&fit=crop&w=120&q=80', coins: 1420, bestRank: 1, badge: '👑 بطل الأسبوع', countryFlag: '🇸🇦' },
-    { id: 'u2', username: 'صقر قرطاج', avatar: 'https://images.unsplash.com/photo-1570295999919-56ceb5ecca61?auto=format&fit=crop&w=120&q=80', coins: 1180, bestRank: 2, badge: '⚡ هداف المنصة', countryFlag: '🇹🇳' },
-    { id: 'u3', username: 'كابتن طارق', avatar: 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?auto=format&fit=crop&w=120&q=80', coins: 950, bestRank: 3, badge: '🛡️ صخرة الدفاع', countryFlag: '🇪🇬' },
-    { id: 'u4', username: 'فارس الميدان', avatar: 'https://images.unsplash.com/photo-1500648767791-00dcc994a43e?auto=format&fit=crop&w=120&q=80', coins: 780, bestRank: 4, countryFlag: '🇲🇦' },
-    { id: 'u5', username: 'أسد الرافدين', avatar: 'https://images.unsplash.com/photo-1492562080023-ab3db95bfbce?auto=format&fit=crop&w=120&q=80', coins: 640, bestRank: 5, countryFlag: '🇮🇶' },
-    { id: 'u6', username: 'العقرب الأردني', avatar: 'https://images.unsplash.com/photo-1522075469751-3a6694fb2f61?auto=format&fit=crop&w=120&q=80', coins: 510, bestRank: 6, countryFlag: '🇯🇴' },
-    { id: 'u7', username: 'ساحر النيل', avatar: 'https://images.unsplash.com/photo-1519085360753-af0119f7cbe7?auto=format&fit=crop&w=120&q=80', coins: 430, bestRank: 7, countryFlag: '🇪🇬' },
-    { id: 'u8', username: 'النينجا الجزائري', avatar: 'https://images.unsplash.com/photo-1506794778202-cad84cf45f1d?auto=format&fit=crop&w=120&q=80', coins: 360, bestRank: 8, countryFlag: '🇩🇿' },
-    { id: 'u9', username: 'قاهر الشباك', avatar: 'https://images.unsplash.com/photo-1472099645785-5658abf4ff4e?auto=format&fit=crop&w=120&q=80', coins: 290, bestRank: 9, countryFlag: '🇦🇪' },
-    { id: 'u10', username: 'دينامو الخليج', avatar: 'https://images.unsplash.com/photo-1517841905240-472988babdf9?auto=format&fit=crop&w=120&q=80', coins: 210, bestRank: 10, countryFlag: '🇰🇼' }
-  ];
+    return () => {
+      clearInterval(pollInterval);
+      clearInterval(tickInterval);
+    };
+  }, [userProfile.id]);
 
-  // Scale coins based on timeframe
-  const multiplier = timeframe === 'daily' ? 0.3 : timeframe === 'weekly' ? 1 : 3.2;
-
-  // Insert current user into ranking dynamically based on coins
-  const currentUserItem = {
-    id: userProfile.id,
-    username: userProfile.username,
-    avatar: userProfile.avatar,
-    coins: userProfile.coins,
-    bestRank: userProfile.bestRank || 12,
-    badge: '⭐ أنت',
-    countryFlag: '⚽',
-    isCurrentUser: true
-  };
-
-  const allLeaderboardUsers: LeaderboardUser[] = [
-    ...baseCommunityUsers.map(u => ({ ...u, coins: Math.round(u.coins * multiplier) })),
-    currentUserItem
-  ]
-    .sort((a, b) => b.coins - a.coins)
-    .map((u, idx) => ({ ...u, rank: idx + 1 }));
-
-  const currentUserRankInfo = allLeaderboardUsers.find(u => u.isCurrentUser) || {
-    rank: 11,
-    ...currentUserItem
-  };
-
-  // Hall of Fame - Previous Winners with Medals
-  const previousWinners: {
-    season: string;
-    period: string;
-    winnerName: string;
-    avatar: string;
-    coinsTotal: number;
-    medalType: 'gold' | 'silver' | 'bronze';
-    medalTitle: string;
-  }[] = [
-    { season: 'الموسم 3', period: 'الأسبوع الماضي', winnerName: 'المايسترو زيد', avatar: 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?auto=format&fit=crop&w=120&q=80', coinsTotal: 1840, medalType: 'gold', medalTitle: 'وسام الذهب الأسبوعي #3' },
-    { season: 'الموسم 2', period: 'قبل أسبوعين', winnerName: 'صقر قرطاج', avatar: 'https://images.unsplash.com/photo-1570295999919-56ceb5ecca61?auto=format&fit=crop&w=120&q=80', coinsTotal: 1690, medalType: 'gold', medalTitle: 'وسام الذهب الأسبوعي #2' },
-    { season: 'الموسم 1', period: 'الشهر الماضي', winnerName: 'كابتن طارق', avatar: 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?auto=format&fit=crop&w=120&q=80', coinsTotal: 2450, medalType: 'gold', medalTitle: 'كأس الشهر الممتاز #1' }
-  ];
+  const top3 = players.slice(0, 3);
 
   return (
-    <div className="min-h-screen bg-[#08080a] text-zinc-100 pb-24 select-none">
-      {/* Top Header */}
-      <div className="sticky top-0 z-30 bg-[#0a0b0e]/95 backdrop-blur-md border-b border-zinc-800 px-4 py-3 flex items-center justify-between">
-        <button
-          onClick={() => {
-            sounds.playTap();
-            onBack();
-          }}
-          className="flex items-center gap-1.5 text-xs text-amber-400 font-tajawal hover:text-amber-300"
-        >
-          <ArrowRight className="w-4 h-4" />
-          <span>رجوع</span>
-        </button>
-
-        <div className="flex items-center gap-1.5">
-          <Trophy className="w-4 h-4 text-amber-400" />
-          <h2 className="font-chakra font-black text-sm tracking-wider bg-gradient-to-r from-amber-200 to-amber-500 bg-clip-text text-transparent">
-            GOALIX RANKING
-          </h2>
-        </div>
-
-        <div className="w-12" />
-      </div>
-
-      <div className="max-w-md mx-auto px-4 py-4 space-y-4">
-        {/* Navigation between Leaderboard / Hall of Fame / Rewards */}
-        <div className="grid grid-cols-3 gap-1 bg-black/60 p-1 rounded-2xl border border-zinc-800 text-center text-xs font-tajawal font-bold">
-          <button
-            onClick={() => {
-              sounds.playTap();
-              setActiveTabSection('leaderboard');
-            }}
-            className={`py-2 rounded-xl transition-all ${
-              activeTabSection === 'leaderboard'
-                ? 'bg-amber-500 text-black shadow-lg font-black'
-                : 'text-zinc-400 hover:text-zinc-200'
-            }`}
-          >
-            المتصدرون
-          </button>
-          <button
-            onClick={() => {
-              sounds.playTap();
-              setActiveTabSection('hall_of_fame');
-            }}
-            className={`py-2 rounded-xl transition-all ${
-              activeTabSection === 'hall_of_fame'
-                ? 'bg-amber-500 text-black shadow-lg font-black'
-                : 'text-zinc-400 hover:text-zinc-200'
-            }`}
-          >
-            الفائزون السابقون
-          </button>
-          <button
-            onClick={() => {
-              sounds.playTap();
-              setActiveTabSection('rewards');
-            }}
-            className={`py-2 rounded-xl transition-all ${
-              activeTabSection === 'rewards'
-                ? 'bg-amber-500 text-black shadow-lg font-black'
-                : 'text-zinc-400 hover:text-zinc-200'
-            }`}
-          >
-            الجوائز
-          </button>
-        </div>
-
-        {/* ================= SECTION 1: LEADERBOARD ================= */}
-        {activeTabSection === 'leaderboard' && (
-          <div className="space-y-4">
-            {/* Timeframe Selector (Daily / Weekly / Monthly) */}
-            <div className="bg-zinc-900/90 rounded-2xl p-3 border border-zinc-800 space-y-2.5">
-              <div className="flex items-center justify-between">
-                <span className="text-xs font-bold font-tajawal text-zinc-300">
-                  الفترة الزمنية للترتيب:
-                </span>
-                <div className="flex items-center gap-1 text-[11px] font-chakra text-amber-400">
-                  <Clock className="w-3.5 h-3.5" />
-                  <span>
-                    {String(timeLeft.hours).padStart(2, '0')}:{String(timeLeft.minutes).padStart(2, '0')}:{String(timeLeft.seconds).padStart(2, '0')}
-                  </span>
-                </div>
-              </div>
-
-              <div className="grid grid-cols-3 gap-2">
-                {[
-                  { id: 'daily' as RankingTimeframe, label: 'يومي (Daily)' },
-                  { id: 'weekly' as RankingTimeframe, label: 'أسبوعي (Weekly)' },
-                  { id: 'monthly' as RankingTimeframe, label: 'شهري (Monthly)' }
-                ].map(tf => (
-                  <button
-                    key={tf.id}
-                    onClick={() => {
-                      sounds.playTap();
-                      setTimeframe(tf.id);
-                    }}
-                    className={`py-2 rounded-xl text-xs font-tajawal font-bold border transition-all ${
-                      timeframe === tf.id
-                        ? 'border-amber-400 bg-amber-500/15 text-amber-300 shadow-md'
-                        : 'border-zinc-800 bg-black/40 text-zinc-400 hover:text-zinc-200'
-                    }`}
-                  >
-                    {tf.label}
-                  </button>
-                ))}
-              </div>
-            </div>
-
-            {/* Current User Status Card */}
-            <div className="bg-gradient-to-r from-amber-950/40 via-zinc-900 to-black rounded-2xl p-4 border border-amber-500/40 shadow-xl space-y-3">
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-3">
-                  <div className="relative">
-                    <div className="w-12 h-12 rounded-xl overflow-hidden border-2 border-amber-400 bg-zinc-900 shadow">
-                      {userProfile.avatar ? (
-                        <img src={userProfile.avatar} alt={userProfile.username} className="w-full h-full object-cover" />
-                      ) : (
-                        <User className="w-6 h-6 text-amber-400 m-auto mt-2.5" />
-                      )}
-                    </div>
-                    <div className="absolute -bottom-1 -right-1 bg-amber-500 text-black font-chakra font-black text-[9px] px-1 rounded-sm border border-amber-300">
-                      #{currentUserRankInfo.rank}
-                    </div>
-                  </div>
-
-                  <div>
-                    <h4 className="font-bold text-sm text-white font-tajawal">
-                      {userProfile.username} (أنت)
-                    </h4>
-                    <div className="flex items-center gap-2 mt-0.5">
-                      <span className="text-[11px] text-zinc-400 font-tajawal">
-                        أفضل مركز: <strong className="text-zinc-200 font-chakra">#{userProfile.bestRank || currentUserRankInfo.rank}</strong>
-                      </span>
-                    </div>
-                  </div>
-                </div>
-
-                <div className="text-left bg-black/60 px-3 py-1.5 rounded-xl border border-amber-500/30">
-                  <div className="flex items-center gap-1 text-amber-400 font-chakra font-black text-base justify-end">
-                    <Coins className="w-4 h-4" />
-                    <span>{userProfile.coins}</span>
-                  </div>
-                  <span className="text-[9px] text-zinc-400 font-tajawal block text-right">رصيد الكوينز</span>
-                </div>
-              </div>
-
-              <div className="text-[11px] text-amber-300/90 font-tajawal bg-amber-500/10 p-2 rounded-xl border border-amber-500/20 text-center">
-                💡 الترتيب يعتمد أساساً على رصيد الكوينز المكتسبة من الفوز بالمباريات.
-              </div>
-            </div>
-
-            {/* Top 3 Podium Highlights */}
-            <div className="grid grid-cols-3 gap-2 items-end pt-2">
-              {/* #2 Runner up */}
-              {allLeaderboardUsers[1] && (
-                <div className="bg-zinc-900/90 border border-zinc-700/80 rounded-2xl p-2.5 text-center space-y-1.5 shadow-lg">
-                  <div className="w-6 h-6 rounded-full bg-zinc-700 text-zinc-200 text-xs font-chakra font-black flex items-center justify-center mx-auto">
-                    2
-                  </div>
-                  <div className="w-10 h-10 rounded-full overflow-hidden border border-zinc-500 mx-auto">
-                    <img src={allLeaderboardUsers[1].avatar} alt="" className="w-full h-full object-cover" />
-                  </div>
-                  <p className="text-[11px] font-bold text-zinc-200 font-tajawal truncate">
-                    {allLeaderboardUsers[1].username}
-                  </p>
-                  <span className="text-[10px] font-chakra font-bold text-zinc-300 block">
-                    {allLeaderboardUsers[1].coins} C
-                  </span>
-                </div>
-              )}
-
-              {/* #1 Champion */}
-              {allLeaderboardUsers[0] && (
-                <div className="bg-gradient-to-b from-[#2b210a] via-zinc-900 to-zinc-950 border-2 border-amber-400 rounded-2xl p-3 text-center space-y-2 shadow-[0_0_20px_rgba(212,175,55,0.3)] -translate-y-2">
-                  <div className="flex items-center justify-center gap-1 text-amber-400">
-                    <Crown className="w-5 h-5 fill-amber-400 animate-bounce" />
-                  </div>
-                  <div className="w-12 h-12 rounded-full overflow-hidden border-2 border-amber-300 mx-auto shadow-md">
-                    <img src={allLeaderboardUsers[0].avatar} alt="" className="w-full h-full object-cover" />
-                  </div>
-                  <p className="text-xs font-bold text-amber-300 font-tajawal truncate">
-                    {allLeaderboardUsers[0].username}
-                  </p>
-                  <span className="text-xs font-chakra font-black text-amber-400 block">
-                    {allLeaderboardUsers[0].coins} Coins
-                  </span>
-                  <span className="text-[9px] bg-amber-500/20 text-amber-300 px-1.5 py-0.5 rounded font-tajawal block">
-                    {allLeaderboardUsers[0].badge || 'المتصدر'}
-                  </span>
-                </div>
-              )}
-
-              {/* #3 Third place */}
-              {allLeaderboardUsers[2] && (
-                <div className="bg-zinc-900/90 border border-amber-900/60 rounded-2xl p-2.5 text-center space-y-1.5 shadow-lg">
-                  <div className="w-6 h-6 rounded-full bg-amber-900/60 text-amber-300 text-xs font-chakra font-black flex items-center justify-center mx-auto">
-                    3
-                  </div>
-                  <div className="w-10 h-10 rounded-full overflow-hidden border border-amber-800 mx-auto">
-                    <img src={allLeaderboardUsers[2].avatar} alt="" className="w-full h-full object-cover" />
-                  </div>
-                  <p className="text-[11px] font-bold text-zinc-200 font-tajawal truncate">
-                    {allLeaderboardUsers[2].username}
-                  </p>
-                  <span className="text-[10px] font-chakra font-bold text-amber-400/90 block">
-                    {allLeaderboardUsers[2].coins} C
-                  </span>
-                </div>
-              )}
-            </div>
-
-            {/* Leaderboard Table List (#4 onwards) */}
-            <div className="bg-zinc-900/90 rounded-2xl p-3 border border-zinc-800 shadow-xl space-y-2">
-              <div className="flex items-center justify-between text-xs text-zinc-400 font-tajawal pb-2 border-b border-zinc-800 px-2">
-                <span>المركز واللاعب</span>
-                <span>الكوينز (Coins)</span>
-              </div>
-
-              <div className="space-y-1.5">
-                {allLeaderboardUsers.map(user => {
-                  const isUser = user.isCurrentUser;
-                  return (
-                    <div
-                      key={user.id}
-                      className={`flex items-center justify-between p-2.5 rounded-xl transition-all ${
-                        isUser
-                          ? 'bg-amber-500/20 border border-amber-400 text-amber-300 font-bold shadow-md'
-                          : 'bg-black/40 border border-zinc-800/80 hover:border-zinc-700'
-                      }`}
-                    >
-                      <div className="flex items-center gap-2.5 min-w-0">
-                        <span className={`w-6 text-center font-chakra font-black text-xs ${
-                          user.rank === 1 ? 'text-amber-400' : user.rank === 2 ? 'text-zinc-300' : user.rank === 3 ? 'text-amber-600' : 'text-zinc-500'
-                        }`}>
-                          #{user.rank}
-                        </span>
-
-                        <div className="w-8 h-8 rounded-lg overflow-hidden border border-zinc-700 bg-zinc-800 shrink-0">
-                          {user.avatar ? (
-                            <img src={user.avatar} alt="" className="w-full h-full object-cover" />
-                          ) : (
-                            <User className="w-4 h-4 text-zinc-400 m-auto mt-2" />
-                          )}
-                        </div>
-
-                        <div className="truncate min-w-0">
-                          <p className="text-xs font-tajawal font-medium text-zinc-100 truncate">
-                            {user.username} {isUser && '(أنت)'}
-                          </p>
-                          {user.badge && (
-                            <span className="text-[9px] text-amber-400/90 font-tajawal block">
-                              {user.badge}
-                            </span>
-                          )}
-                        </div>
-                      </div>
-
-                      <div className="flex items-center gap-1 font-chakra font-black text-xs text-amber-400 shrink-0">
-                        <Coins className="w-3.5 h-3.5" />
-                        <span>{user.coins}</span>
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
+    <div className="pb-24 pt-2 px-3 sm:px-4 max-w-lg mx-auto space-y-4 select-none font-tajawal antialiased">
+      {/* ================= 1. HEADER & LIVE 5S SERVER POLLING BADGE ================= */}
+      <div className="flex items-center justify-between bg-zinc-900/90 border border-amber-500/30 rounded-2xl p-3.5 backdrop-blur-md shadow-xl">
+        <div className="flex items-center gap-2.5">
+          <div className="w-10 h-10 rounded-xl bg-gradient-to-tr from-amber-600 to-yellow-300 p-0.5 shadow-md flex items-center justify-center">
+            <div className="w-full h-full bg-zinc-950 rounded-[10px] flex items-center justify-center">
+              <Trophy className="w-5 h-5 text-amber-400" />
             </div>
           </div>
-        )}
-
-        {/* ================= SECTION 2: HALL OF FAME (PREVIOUS WINNERS) ================= */}
-        {activeTabSection === 'hall_of_fame' && (
-          <div className="space-y-3">
-            <div className="bg-zinc-900/90 rounded-2xl p-4 border border-zinc-800 space-y-2">
-              <div className="flex items-center gap-2 text-amber-400">
-                <Medal className="w-5 h-5" />
-                <h3 className="font-chakra font-black text-sm text-zinc-100 uppercase tracking-wider">
-                  HALL OF FAME · قاعة المشاهير
-                </h3>
-              </div>
-              <p className="text-xs text-zinc-400 font-tajawal">
-                سجل الفائزين السابقين بالبطولات والترتيب الدوري. يحتفظ الأبطال بأوسمتهم وميدالياتهم بشكل دائم في سجلهم.
-              </p>
+          <div>
+            <h2 className="text-base font-black text-white font-tajawal">
+              دوري الغرف الأونلاين
+            </h2>
+            <div className="flex items-center gap-1.5 mt-0.5">
+              <span className="w-2 h-2 rounded-full bg-emerald-400 animate-ping" />
+              <span className="text-[11px] font-tajawal text-emerald-400 font-bold">
+                تحديث حي من السيرفر كل {secondsUntilNextRefresh}ث
+              </span>
             </div>
+          </div>
+        </div>
 
-            {/* User's own medals if any */}
-            {userProfile.pastMedals && userProfile.pastMedals.length > 0 && (
-              <div className="bg-gradient-to-r from-amber-950/40 via-zinc-900 to-black rounded-2xl p-4 border border-amber-500/40 space-y-2">
-                <h4 className="text-xs font-bold text-amber-400 font-tajawal flex items-center gap-1.5">
-                  <Award className="w-4 h-4" />
-                  أوسمتك المحفوظة في السجل:
-                </h4>
-                <div className="space-y-1.5">
-                  {userProfile.pastMedals.map(m => (
-                    <div key={m.id} className="flex items-center justify-between p-2 rounded-xl bg-black/60 border border-amber-500/20 text-xs font-tajawal">
-                      <div className="flex items-center gap-2">
-                        <span className="text-lg">🏅</span>
-                        <div>
-                          <p className="font-bold text-white">{m.title}</p>
-                          <span className="text-[10px] text-zinc-400">{m.season} · {m.date}</span>
-                        </div>
-                      </div>
-                      <span className="text-[10px] font-chakra text-amber-400 font-bold bg-amber-500/10 px-2 py-0.5 rounded border border-amber-500/30">
-                        {m.type.toUpperCase()}
-                      </span>
-                    </div>
-                  ))}
+        <button
+          onClick={() => {
+            sounds.playButtonClick();
+            loadRanking(true);
+          }}
+          disabled={isRefreshing}
+          className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-black/50 border border-zinc-800 text-xs font-bold text-amber-300 hover:border-amber-400/60 active:scale-95 transition-all cursor-pointer"
+          title="تحديث فوري من السيرفر"
+        >
+          <RefreshCw className={`w-3.5 h-3.5 ${isRefreshing ? 'animate-spin text-amber-400' : ''}`} />
+          <span className="hidden xs:inline">تحديث</span>
+        </button>
+      </div>
+
+      {/* ================= 2. OFFICIAL POINTS RULES EXPLAINER ================= */}
+      <div className="bg-gradient-to-r from-amber-950/40 via-zinc-900 to-zinc-950 border border-amber-500/30 rounded-2xl p-3.5 space-y-2">
+        <div className="flex items-center justify-between text-xs font-bold text-amber-300">
+          <div className="flex items-center gap-1.5">
+            <Sparkles className="w-4 h-4 text-amber-400" />
+            <span>نظام احتساب النقاط الحقيقي (مباريات الغرف فقط)</span>
+          </div>
+          <span className="text-[10px] font-chakra px-2 py-0.5 rounded-full bg-amber-500/20 text-amber-300 border border-amber-500/40">
+            ONLINE ROOMS
+          </span>
+        </div>
+
+        <div className="grid grid-cols-3 gap-2 text-center font-chakra pt-1">
+          <div className="bg-emerald-950/40 border border-emerald-500/30 p-2 rounded-xl">
+            <span className="text-[10px] text-emerald-300 font-tajawal block font-bold">الفوز</span>
+            <span className="text-base font-black text-emerald-400">+3 نقاط</span>
+          </div>
+
+          <div className="bg-blue-950/40 border border-blue-500/30 p-2 rounded-xl">
+            <span className="text-[10px] text-blue-300 font-tajawal block font-bold">التعادل</span>
+            <span className="text-base font-black text-blue-300">+1 نقطة</span>
+          </div>
+
+          <div className="bg-red-950/40 border border-red-500/30 p-2 rounded-xl">
+            <span className="text-[10px] text-red-300 font-tajawal block font-bold">الخسارة</span>
+            <span className="text-base font-black text-red-400">0 نقاط</span>
+          </div>
+        </div>
+
+        <p className="text-[11px] text-zinc-400 font-tajawal text-center">
+          ⚽ النقاط تُكسب حصرياً عبر الفوز والتعادل في مواجهات الغرف التنافسية الأونلاين ضد لاعبين حقيقيين!
+        </p>
+      </div>
+
+      {/* ================= 3. CURRENT USER STANDING CARD ================= */}
+      <div className="bg-gradient-to-b from-zinc-900 via-zinc-900/95 to-black border-2 border-amber-500/50 rounded-2xl p-4 shadow-2xl relative overflow-hidden">
+        <div className="absolute top-0 left-0 right-0 h-[2px] bg-gradient-to-r from-transparent via-amber-400 to-transparent" />
+        
+        <div className="flex items-center justify-between mb-3">
+          <div className="flex items-center gap-2">
+            <div className="w-11 h-11 rounded-xl overflow-hidden border-2 border-amber-400 bg-zinc-800 shadow">
+              <img 
+                src={userProfile.avatar || currentUserRank?.avatar} 
+                alt={userProfile.username} 
+                className="w-full h-full object-cover" 
+              />
+            </div>
+            <div>
+              <div className="flex items-center gap-1.5">
+                <h3 className="font-bold text-sm text-white">
+                  {userProfile.username}
+                </h3>
+                <span className="px-1.5 py-0.5 rounded text-[9px] bg-amber-500/20 text-amber-300 border border-amber-500/40 font-bold">
+                  أنت
+                </span>
+              </div>
+              <span className="text-[11px] text-zinc-400 font-tajawal block">
+                {currentUserRank && currentUserRank.played > 0 
+                  ? `خاض ${currentUserRank.played} مباراة في الغرف`
+                  : 'لم تخض مباريات غرف بعد، العب الآن!'}
+              </span>
+            </div>
+          </div>
+
+          <div className="text-right">
+            <span className="text-[10px] text-zinc-400 font-tajawal block">الترتيب الحالي</span>
+            <div className="flex items-center justify-end gap-1">
+              <Crown className="w-4 h-4 text-amber-400" />
+              <span className="text-xl font-chakra font-black text-amber-400">
+                {currentUserRank ? `#${currentUserRank.rank}` : '#-'}
+              </span>
+            </div>
+          </div>
+        </div>
+
+        {/* Detailed User Stats */}
+        <div className="grid grid-cols-5 gap-1.5 bg-black/60 rounded-xl p-2.5 border border-zinc-800 text-center font-chakra">
+          <div>
+            <span className="text-[10px] text-zinc-400 font-tajawal block">النقاط</span>
+            <span className="text-base font-black text-amber-400">{currentUserRank?.points || 0}</span>
+          </div>
+          <div>
+            <span className="text-[10px] text-zinc-400 font-tajawal block">لعب</span>
+            <span className="text-sm font-bold text-zinc-200">{currentUserRank?.played || 0}</span>
+          </div>
+          <div>
+            <span className="text-[10px] text-emerald-400 font-tajawal block">فوز</span>
+            <span className="text-sm font-bold text-emerald-400">{currentUserRank?.wins || 0}</span>
+          </div>
+          <div>
+            <span className="text-[10px] text-blue-400 font-tajawal block">تعادل</span>
+            <span className="text-sm font-bold text-blue-300">{currentUserRank?.draws || 0}</span>
+          </div>
+          <div>
+            <span className="text-[10px] text-zinc-400 font-tajawal block">فارق الأهداف</span>
+            <span className={`text-sm font-bold ${(currentUserRank?.goalDiff || 0) >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>
+              {(currentUserRank?.goalDiff || 0) > 0 ? `+${currentUserRank?.goalDiff}` : currentUserRank?.goalDiff || 0}
+            </span>
+          </div>
+        </div>
+
+        {onOpenRooms && (
+          <div className="mt-3">
+            <GoldButton 
+              onClick={() => {
+                sounds.playButtonClick();
+                onOpenRooms();
+              }} 
+              fullWidth 
+              size="sm"
+            >
+              <Wifi className="w-4 h-4" />
+              <span>دخول الغرف وخوض مباراة (+3 نقاط للفوز)</span>
+              <ArrowUpRight className="w-4 h-4 mr-0.5" />
+            </GoldButton>
+          </div>
+        )}
+      </div>
+
+      {/* ================= 4. TOP 3 PODIUM ================= */}
+      {top3.length > 0 && (
+        <div className="space-y-2 pt-1">
+          <div className="flex items-center justify-between">
+            <h3 className="text-xs font-bold text-amber-400 font-tajawal flex items-center gap-1.5">
+              <Crown className="w-4 h-4" />
+              قمة صدارة الدوري (Top 3)
+            </h3>
+            <span className="text-[10px] text-zinc-400 font-tajawal">سيرفر مُعتمد</span>
+          </div>
+
+          <div className="grid grid-cols-3 gap-2 items-end pt-3">
+            {/* Rank 2 (Silver) */}
+            {top3[1] && (
+              <div className="bg-zinc-900/90 border border-zinc-700/60 rounded-2xl p-2.5 text-center flex flex-col items-center shadow-lg relative">
+                <div className="w-6 h-6 rounded-full bg-slate-300 text-black font-chakra font-black text-xs flex items-center justify-center -mt-5 mb-1 border-2 border-zinc-900 shadow">
+                  2
                 </div>
+                <div className="w-12 h-12 rounded-full overflow-hidden border-2 border-slate-300 bg-zinc-800 mb-1">
+                  <img src={top3[1].avatar} alt={top3[1].username} className="w-full h-full object-cover" />
+                </div>
+                <span className="text-[11px] font-bold text-zinc-100 truncate w-full block">
+                  {top3[1].username}
+                </span>
+                <span className="text-xs font-chakra font-black text-slate-300 mt-0.5">
+                  {top3[1].points} <span className="text-[9px] font-tajawal">نقطة</span>
+                </span>
+                <span className="text-[9px] text-zinc-400 font-chakra">
+                  {top3[1].wins}ف · {top3[1].draws}ت
+                </span>
               </div>
             )}
 
-            {/* Community Hall of Fame */}
-            <div className="space-y-2">
-              {previousWinners.map((winner, idx) => (
-                <div
-                  key={idx}
-                  className="bg-zinc-900/90 rounded-2xl p-3.5 border border-zinc-800 flex items-center justify-between shadow-lg"
-                >
-                  <div className="flex items-center gap-3">
-                    <div className="w-12 h-12 rounded-xl overflow-hidden border border-amber-400/60 bg-zinc-800 shrink-0">
-                      <img src={winner.avatar} alt="" className="w-full h-full object-cover" />
-                    </div>
-                    <div>
-                      <div className="flex items-center gap-1.5">
-                        <Crown className="w-3.5 h-3.5 text-amber-400" />
-                        <h4 className="font-bold text-sm text-zinc-100 font-tajawal">{winner.winnerName}</h4>
-                      </div>
-                      <p className="text-[11px] text-amber-300 font-tajawal mt-0.5">
-                        {winner.medalTitle}
-                      </p>
-                      <span className="text-[10px] text-zinc-400 font-chakra">
-                        {winner.season} · {winner.period}
-                      </span>
-                    </div>
-                  </div>
-
-                  <div className="text-left">
-                    <span className="text-xs font-chakra font-black text-amber-400 block">
-                      {winner.coinsTotal} C
-                    </span>
-                    <span className="text-[9px] text-zinc-500 font-tajawal">مجموع الموسم</span>
-                  </div>
+            {/* Rank 1 (Gold Champion) */}
+            {top3[0] && (
+              <div className="bg-gradient-to-b from-amber-950/60 to-zinc-900 border-2 border-amber-400 rounded-2xl p-3 text-center flex flex-col items-center shadow-[0_4px_20px_rgba(212,175,55,0.25)] relative -translate-y-2">
+                <Crown className="w-5 h-5 text-amber-400 -mt-6 mb-0.5 drop-shadow animate-bounce" />
+                <div className="w-14 h-14 rounded-full overflow-hidden border-2 border-amber-400 bg-zinc-800 mb-1 shadow-lg">
+                  <img src={top3[0].avatar} alt={top3[0].username} className="w-full h-full object-cover" />
                 </div>
-              ))}
-            </div>
-          </div>
-        )}
-
-        {/* ================= SECTION 3: REWARDS ================= */}
-        {activeTabSection === 'rewards' && (
-          <div className="space-y-3">
-            <div className="bg-zinc-900/90 rounded-2xl p-4 border border-zinc-800 space-y-2">
-              <div className="flex items-center gap-2 text-amber-400">
-                <Sparkles className="w-5 h-5" />
-                <h3 className="font-chakra font-black text-sm text-zinc-100 uppercase tracking-wider">
-                  RANKING REWARDS · جوائز الترتيب
-                </h3>
+                <span className="text-xs font-black text-white truncate w-full block">
+                  {top3[0].username}
+                </span>
+                <span className="text-sm font-chakra font-black text-amber-400 mt-0.5">
+                  {top3[0].points} <span className="text-[10px] font-tajawal">نقطة</span>
+                </span>
+                <span className="text-[10px] text-amber-200/80 font-chakra font-medium">
+                  {top3[0].wins} فوز · {top3[0].played} مباراة
+                </span>
+                {top3[0].badge && (
+                  <span className="text-[9px] px-1.5 py-0.5 rounded bg-amber-400/20 text-amber-300 border border-amber-400/40 mt-1">
+                    {top3[0].badge}
+                  </span>
+                )}
               </div>
-              <p className="text-xs text-zinc-400 font-tajawal">
-                تُوزع الجوائز تلقائياً عند انتهاء العد التنازلي لكل فترة لأصحاب المراكز الأولى.
-              </p>
-            </div>
+            )}
 
-            <div className="space-y-2.5">
-              {[
-                { rank: 'المركز الأول (#1)', reward: '+150 كوينز + وسام الذهب الدائم 🥇 + 30 Bids', border: 'border-amber-400 bg-amber-500/10' },
-                { rank: 'المركز الثاني (#2)', reward: '+80 كوينز + وسام الفضة 🥈 + 20 Bids', border: 'border-zinc-500 bg-zinc-800/40' },
-                { rank: 'المركز الثالث (#3)', reward: '+50 كوينز + وسام البرونز 🥉 + 10 Bids', border: 'border-amber-800 bg-amber-950/20' },
-                { rank: 'المراكز 4 – 10', reward: '+25 كوينز + 5 Bids', border: 'border-zinc-800 bg-black/40' },
-                { rank: 'المراكز 11 – 50', reward: '+10 كوينز + 2 Bids', border: 'border-zinc-800 bg-black/40' }
-              ].map((tier, idx) => (
-                <div key={idx} className={`p-3.5 rounded-2xl border ${tier.border} flex items-center justify-between`}>
-                  <div>
-                    <h4 className="font-bold text-xs text-white font-tajawal">{tier.rank}</h4>
-                    <p className="text-[11px] text-amber-300 font-tajawal mt-0.5">{tier.reward}</p>
-                  </div>
-                  <Award className="w-5 h-5 text-amber-400/80" />
+            {/* Rank 3 (Bronze) */}
+            {top3[2] && (
+              <div className="bg-zinc-900/90 border border-amber-700/60 rounded-2xl p-2.5 text-center flex flex-col items-center shadow-lg relative">
+                <div className="w-6 h-6 rounded-full bg-amber-700 text-white font-chakra font-black text-xs flex items-center justify-center -mt-5 mb-1 border-2 border-zinc-900 shadow">
+                  3
                 </div>
-              ))}
-            </div>
+                <div className="w-12 h-12 rounded-full overflow-hidden border-2 border-amber-700 bg-zinc-800 mb-1">
+                  <img src={top3[2].avatar} alt={top3[2].username} className="w-full h-full object-cover" />
+                </div>
+                <span className="text-[11px] font-bold text-zinc-100 truncate w-full block">
+                  {top3[2].username}
+                </span>
+                <span className="text-xs font-chakra font-black text-amber-600 mt-0.5">
+                  {top3[2].points} <span className="text-[9px] font-tajawal">نقطة</span>
+                </span>
+                <span className="text-[9px] text-zinc-400 font-chakra">
+                  {top3[2].wins}ف · {top3[2].draws}ت
+                </span>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* ================= 5. FULL LEADERBOARD TABLE ================= */}
+      <div className="bg-zinc-900/90 border border-zinc-800 rounded-2xl overflow-hidden shadow-xl">
+        <div className="p-3 border-b border-zinc-800 flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <TrendingUp className="w-4 h-4 text-amber-400" />
+            <h3 className="font-bold text-sm text-zinc-100 font-tajawal">
+              جدول ترتيب المتنافسين
+            </h3>
+          </div>
+          <span className="text-[11px] font-chakra text-zinc-400">
+            {players.length} لاعب مسجل
+          </span>
+        </div>
+
+        {/* Table Header */}
+        <div className="grid grid-cols-12 gap-1 px-3 py-2 bg-black/40 text-[10px] font-bold text-zinc-400 font-tajawal text-center border-b border-zinc-800/80">
+          <div className="col-span-1">#</div>
+          <div className="col-span-5 text-right pr-2">اللاعب</div>
+          <div className="col-span-1">ل</div>
+          <div className="col-span-1 text-emerald-400">ف</div>
+          <div className="col-span-1 text-blue-300">ت</div>
+          <div className="col-span-1 text-red-400">خ</div>
+          <div className="col-span-1">+/-</div>
+          <div className="col-span-1 font-chakra font-black text-amber-400">ن</div>
+        </div>
+
+        {/* Table Rows */}
+        {players.length === 0 ? (
+          <div className="p-8 text-center space-y-2">
+            <Trophy className="w-8 h-8 text-amber-400/50 mx-auto" />
+            <p className="text-sm font-bold text-zinc-300">جدول الدوري الحقيقي فارغ حالياً</p>
+            <p className="text-xs text-zinc-500">لا توجد حسابات وهمية — خض مباريات حقيقية في الغرف لحصد النقاط وتصدر القائمة!</p>
+          </div>
+        ) : (
+          <div className="divide-y divide-zinc-800/60 max-h-[380px] overflow-y-auto">
+            {players.map((p) => {
+              const isUser = p.id === userProfile.id;
+              return (
+                <div
+                  key={p.id}
+                  className={`grid grid-cols-12 gap-1 items-center px-3 py-2.5 text-center text-xs transition-colors ${
+                    isUser
+                      ? 'bg-amber-950/30 border-r-2 border-r-amber-400 font-bold'
+                      : 'hover:bg-zinc-800/40'
+                  }`}
+                >
+                  {/* Rank */}
+                  <div className="col-span-1 font-chakra font-black">
+                    {p.rank === 1 && <span className="text-amber-400">🥇</span>}
+                    {p.rank === 2 && <span className="text-slate-300">🥈</span>}
+                    {p.rank === 3 && <span className="text-amber-600">🥉</span>}
+                    {p.rank > 3 && <span className="text-zinc-400 text-xs">#{p.rank}</span>}
+                  </div>
+
+                  {/* Player Profile & Name */}
+                  <div className="col-span-5 flex items-center gap-2 text-right pr-1 overflow-hidden">
+                    <div className="w-7 h-7 rounded-lg overflow-hidden border border-zinc-700 bg-zinc-800 shrink-0">
+                      <img src={p.avatar} alt={p.username} className="w-full h-full object-cover" />
+                    </div>
+                    <div className="truncate">
+                      <span className={`block truncate ${isUser ? 'text-amber-300 font-black' : 'text-zinc-200'}`}>
+                        {p.username}
+                      </span>
+                      {p.badge && (
+                        <span className="text-[9px] text-amber-400/80 block truncate">
+                          {p.badge}
+                        </span>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* Played */}
+                  <div className="col-span-1 font-chakra text-zinc-300 text-xs">
+                    {p.played}
+                  </div>
+
+                  {/* Wins */}
+                  <div className="col-span-1 font-chakra text-emerald-400 font-bold text-xs">
+                    {p.wins}
+                  </div>
+
+                  {/* Draws */}
+                  <div className="col-span-1 font-chakra text-blue-300 text-xs">
+                    {p.draws}
+                  </div>
+
+                  {/* Losses */}
+                  <div className="col-span-1 font-chakra text-zinc-500 text-xs">
+                    {p.losses}
+                  </div>
+
+                  {/* Goal Diff */}
+                  <div className={`col-span-1 font-chakra text-[11px] ${p.goalDiff >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>
+                    {p.goalDiff > 0 ? `+${p.goalDiff}` : p.goalDiff}
+                  </div>
+
+                  {/* Points */}
+                  <div className="col-span-1 font-chakra font-black text-amber-400 text-sm">
+                    {p.points}
+                  </div>
+                </div>
+              );
+            })}
           </div>
         )}
       </div>

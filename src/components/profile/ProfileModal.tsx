@@ -9,6 +9,9 @@ interface ProfileModalProps {
   userProfile: UserProfile;
   onUpdate: (updated: UserProfile) => void;
   onClose: () => void;
+  onReplaySplash?: () => void;
+  onOpenAdmin?: () => void;
+  onOpenAuth?: () => void;
 }
 
 const AVAILABLE_AVATARS = [
@@ -21,11 +24,15 @@ const AVAILABLE_AVATARS = [
 export const ProfileModal: React.FC<ProfileModalProps> = ({
   userProfile,
   onUpdate,
-  onClose
+  onClose,
+  onReplaySplash,
+  onOpenAdmin,
+  onOpenAuth
 }) => {
   const [username, setUsername] = useState(userProfile.username);
   const [selectedAvatar, setSelectedAvatar] = useState(userProfile.avatar);
   const [isSaved, setIsSaved] = useState(false);
+  const isDevAdmin = userProfile.username.includes('محمود') || userProfile.id === 'dev_mahmoud_salama';
 
   const winRate = userProfile.matchesPlayed > 0 
     ? Math.round((userProfile.matchesWon / userProfile.matchesPlayed) * 100) 
@@ -117,6 +124,60 @@ export const ProfileModal: React.FC<ProfileModalProps> = ({
               <span className="font-bold text-sm text-green-400">{winRate}%</span>
             </div>
           </div>
+        </div>
+
+        {/* Developer Tribute Card */}
+        <div className="bg-gradient-to-r from-amber-950/30 via-zinc-900 to-black rounded-xl p-3 border border-amber-500/30 flex items-center justify-between">
+          <div className="space-y-0.5">
+            <span className="text-[10px] font-tajawal text-amber-400 font-bold block">
+              مطور ومصمم المنصة:
+            </span>
+            <span className="text-xs font-black text-white font-tajawal block">
+              محمود أحمد سلامة
+            </span>
+            <span className="text-[10px] text-zinc-400 font-chakra block">
+              Mahmoud Ahmed Salama
+            </span>
+          </div>
+
+          {onReplaySplash && (
+            <button
+              onClick={() => {
+                onClose();
+                onReplaySplash();
+              }}
+              className="text-[10px] font-tajawal text-amber-300 bg-amber-500/10 hover:bg-amber-500/20 border border-amber-500/30 px-2 py-1.5 rounded-lg transition-all active:scale-95 cursor-pointer"
+            >
+              عرض شاشة البداية ⚡
+            </button>
+          )}
+        </div>
+
+        {/* Admin & Auth Actions */}
+        <div className="grid grid-cols-2 gap-2 pt-1">
+          {onOpenAuth && (
+            <button
+              onClick={() => {
+                onClose();
+                onOpenAuth();
+              }}
+              className="py-2 px-3 rounded-xl bg-zinc-900 border border-zinc-700 hover:border-amber-400 text-xs font-bold text-zinc-200 transition-all cursor-pointer text-center"
+            >
+              تبديل / تسجيل حساب 🔑
+            </button>
+          )}
+
+          {isDevAdmin && onOpenAdmin && (
+            <button
+              onClick={() => {
+                onClose();
+                onOpenAdmin();
+              }}
+              className="py-2 px-3 rounded-xl bg-amber-500/20 border border-amber-400 hover:bg-amber-500/30 text-xs font-bold text-amber-300 transition-all cursor-pointer text-center"
+            >
+              غرفة الإدارة الخاصة بي 🛡️
+            </button>
+          )}
         </div>
 
         <GoldButton onClick={handleSave} fullWidth size="md">

@@ -20,8 +20,14 @@ export const GoldButton: React.FC<GoldButtonProps> = ({
 }) => {
   const handleClick = (e: React.MouseEvent<HTMLButtonElement>) => {
     if (!disabled) {
-      sounds.playTap();
+      sounds.playButtonClick();
       onClick?.(e);
+    }
+  };
+
+  const handleMouseEnter = () => {
+    if (!disabled) {
+      sounds.playButtonHover();
     }
   };
 
@@ -43,6 +49,7 @@ export const GoldButton: React.FC<GoldButtonProps> = ({
       {...props}
       disabled={disabled}
       onClick={handleClick}
+      onMouseEnter={handleMouseEnter}
       className={`relative inline-flex items-center justify-center font-medium tracking-wide cursor-pointer select-none transition-transform duration-100 ${variantClasses} ${sizeClasses} ${fullWidth ? 'w-full' : ''} ${className}`}
     >
       <span className="relative z-10 flex items-center justify-center gap-2">

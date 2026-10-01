@@ -2,6 +2,8 @@ import express, { Request, Response } from 'express';
 import { createServer as createViteServer } from 'vite';
 import path from 'path';
 import { roomManager } from './server/roomManager';
+import { rankingManager } from './server/rankingManager';
+import { adminDb } from './server/adminDb';
 
 const app = express();
 const PORT = process.env.PORT ? parseInt(process.env.PORT) : 3000;
@@ -177,6 +179,105 @@ apiRouter.post('/rooms/:code/leave', (req: Request, res: Response) => {
   } catch (err: unknown) {
     const message = err instanceof Error ? err.message : 'Unknown error';
     res.status(400).json({ error: message });
+  }
+});
+
+// Official League Rankings (Room Matches Only: Win 3pts, Draw 1pt, Loss 0pts)
+apiRouter.get('/ranking', (req: Request, res: Response) => {
+  try {
+    const userId = req.query.userId as string | undefined;
+    const leaderboard = rankingManager.getLeaderboard(userId);
+    res.json(leaderboard);
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : 'Unknown error';
+    res.status(500).json({ error: message });
+  }
+});
+
+// Sync User Profile for Online Leaderboard
+apiRouter.post('/ranking/sync', (req: Request, res: Response) => {
+  try {
+    const { userId, username, avatar } = req.body;
+    if (!userId) {
+      return res.status(400).json({ error: 'userId is required' });
+    }
+    const player = rankingManager.syncUserProfile(userId, username, avatar);
+    res.json(player);
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : 'Unknown error';
+    res.status(500).json({ error: message });
+  }
+});
+
+// ================= AUTHENTICATION & LOGIN =================
+apiRouter.post('/auth/register', (req: Request, res: Response) => {
+  try {
+    const { username, password, avatar } = req.body;
+    if (!username || !username.trim()) {
+      return res.status(400).json({ error: 'يرجى إدخال اسم المدرب' });
+    }
+    const user = adminDb.registerUser(username, password, avatar);
+    rankingManager.syncUserProfile(user.id, user.username, user.avatar);
+    res.json({ success: true, user });
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : 'فشل التسجيل';
+    res.status(400).json({ error: message });
+  }
+});
+
+apiRouter.post('/auth/login', (req: Request, res: Response) => {
+  try {
+    const { username, password } = req.body;
+    if (!username || !username.trim()) {
+      return res.status(400).json({ error: 'يرجى إدخال اسم المدرب' });
+    }
+    const user = adminDb.authenticate(username, password);
+    if (!user) {
+      return res.status(401).json({ error: 'اسم المستخدم أو كلمة المرور غير صحيحة' });
+    }
+    rankingManager.syncUserProfile(user.id, user.username, user.avatar);
+    res.json({ success: true, user });
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : 'فشل تسجيل الدخول';
+    res.status(500).json({ error: message });
+  }
+});
+
+// ================= ADMIN & PRIVATE DATABASE ROOM =================
+apiRouter.get('/admin/database', (req: Request, res: Response) => {
+  try {
+    const snapshot = adminDb.getDatabaseSnapshot();
+    const activeRooms = roomManager.getAllRooms();
+    const rankings = rankingManager.getLeaderboard();
+    res.json({
+      success: true,
+      snapshot,
+      activeRooms,
+      rankings,
+      serverTime: Date.now()
+    });
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : 'فشل جلب بيانات الإدارة';
+    res.status(500).json({ error: message });
+  }
+});
+
+apiRouter.post('/admin/adjust-user', (req: Request, res: Response) => {
+  try {
+    const { userId, coinsDelta, pointsDelta, bidsDelta } = req.body;
+    if (!userId) {
+      return res.status(400).json({ error: 'معرف المستخدم مطلوب' });
+    }
+    const updated = adminDb.updateUserCoinsAndPoints(
+      userId,
+      coinsDelta || 0,
+      pointsDelta || 0,
+      bidsDelta || 0
+    );
+    res.json({ success: true, user: updated });
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : 'فشل تعديل المستخدم';
+    res.status(500).json({ error: message });
   }
 });
 

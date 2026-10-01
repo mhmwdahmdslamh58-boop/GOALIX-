@@ -22,10 +22,15 @@ import { StoreScreen } from './components/store/StoreScreen';
 import { RankingScreen } from './components/ranking/RankingScreen';
 import { PlayerDetailModal } from './components/collection/PlayerDetailModal';
 import { ProfileModal } from './components/profile/ProfileModal';
+import { AuthModal } from './components/auth/AuthModal';
+import { AdminControlModal } from './components/admin/AdminControlModal';
+import { getStoredAuthSession, AuthUser } from './services/auth';
 import { sounds } from './services/audio';
 
 export default function App() {
   const [profile, setProfile] = useState<UserProfile>(getOrCreateUserProfile());
+  const [showAuthModal, setShowAuthModal] = useState(false);
+  const [showAdminModal, setShowAdminModal] = useState(false);
   const [currentTab, setCurrentTab] = useState<MainTab>('home');
   const [activeGame, setActiveGame] = useState<GameId | null>(null);
   const [activeView, setActiveView] = useState<'main' | 'rooms_lobby'>('main');
@@ -33,8 +38,66 @@ export default function App() {
   const [selectedPlayer, setSelectedPlayer] = useState<Player | null>(null);
   const [showProfileModal, setShowProfileModal] = useState(false);
 
+  // Initialize audio and start ambient loop on first user gesture
+  useEffect(() => {
+    // Restore authenticated session if exists
+    const session = getStoredAuthSession();
+    if (session) {
+      setProfile(prev => ({
+        ...prev,
+        id: session.id,
+        username: session.username,
+        avatar: session.avatar,
+        coins: Math.max(prev.coins, session.coins),
+        bids: Math.max(prev.bids || 0, session.bids || 0),
+        matchesPlayed: Math.max(prev.matchesPlayed, session.matchesPlayed),
+        matchesWon: Math.max(prev.matchesWon, session.matchesWon)
+      }));
+    }
+
+    const handleFirstGesture = () => {
+      sounds.initOnUserGesture();
+    };
+
+    window.addEventListener('click', handleFirstGesture, { once: true });
+    window.addEventListener('touchstart', handleFirstGesture, { once: true });
+    window.addEventListener('keydown', handleFirstGesture, { once: true });
+
+    return () => {
+      window.removeEventListener('click', handleFirstGesture);
+      window.removeEventListener('touchstart', handleFirstGesture);
+      window.removeEventListener('keydown', handleFirstGesture);
+    };
+  }, []);
+
+  // Manage ambient loop between menu and active matches
+  useEffect(() => {
+    if (activeGame !== null || activeRoomCode !== null) {
+      sounds.stopAmbientLoop();
+    } else {
+      if (sounds.isEnabled()) {
+        sounds.startAmbientLoop();
+      }
+    }
+  }, [activeGame, activeRoomCode]);
+
   // Sync profile changes
   const handleUpdateProfile = (updated: UserProfile) => {
+    setProfile(updated);
+    saveUserProfile(updated);
+  };
+
+  const handleAuthSuccess = (authUser: AuthUser) => {
+    const updated: UserProfile = {
+      ...profile,
+      id: authUser.id,
+      username: authUser.username,
+      avatar: authUser.avatar,
+      coins: authUser.coins,
+      bids: authUser.bids || 20,
+      matchesPlayed: authUser.matchesPlayed,
+      matchesWon: authUser.matchesWon
+    };
     setProfile(updated);
     saveUserProfile(updated);
   };
@@ -148,6 +211,8 @@ export default function App() {
         onOpenProfile={() => setShowProfileModal(true)}
         onOpenStore={() => setCurrentTab('store')}
         onOpenRooms={() => setCurrentTab('rooms')}
+        onOpenAuth={() => setShowAuthModal(true)}
+        onOpenAdmin={() => setShowAdminModal(true)}
       />
 
       {/* Main Tab Content */}
@@ -174,6 +239,14 @@ export default function App() {
             userProfile={profile}
             onEnterRoom={(code) => setActiveRoomCode(code)}
             onBack={() => setCurrentTab('home')}
+          />
+        )}
+
+        {currentTab === 'ranking' && (
+          <RankingScreen
+            userProfile={profile}
+            onBack={() => setCurrentTab('home')}
+            onOpenRooms={() => setCurrentTab('rooms')}
           />
         )}
 
@@ -212,6 +285,25 @@ export default function App() {
           userProfile={profile}
           onUpdate={handleUpdateProfile}
           onClose={() => setShowProfileModal(false)}
+          onOpenAdmin={() => setShowAdminModal(true)}
+          onOpenAuth={() => setShowAuthModal(true)}
+        />
+      )}
+
+      {/* In-Game Authentication Modal */}
+      {showAuthModal && (
+        <AuthModal
+          onSuccess={handleAuthSuccess}
+          onClose={() => setShowAuthModal(false)}
+        />
+      )}
+
+      {/* Developer Admin & Database Room */}
+      {showAdminModal && (
+        <AdminControlModal
+          userProfile={profile}
+          onUpdateProfile={handleUpdateProfile}
+          onClose={() => setShowAdminModal(false)}
         />
       )}
     </div>

@@ -15,6 +15,7 @@ import {
 import { GoldButton } from '../../common/GoldButton';
 import { PassThePhoneModal } from '../../common/PassThePhoneModal';
 import { MatchSimulationScreen } from '../simulation/MatchSimulationScreen';
+import { LiveSquadPitch } from '../common/LiveSquadPitch';
 import { sounds } from '../../../services/audio';
 import { Trophy, HelpCircle, User, Bot, ArrowRight, Check, Award } from 'lucide-react';
 
@@ -557,6 +558,18 @@ export const StatArenaGame: React.FC<StatArenaGameProps> = ({
                 </div>
               )}
             </div>
+
+            {/* Live Squad Formations Pitch Under Game */}
+            <LiveSquadPitch
+              p1Name={p1CustomName}
+              p2Name={opponentType === 'cpu' ? 'الكمبيوتر' : p2CustomName}
+              p1Squad={p1Squad}
+              p2Squad={p2Squad}
+              positions={positions}
+              currentRoundIndex={currentRoundIndex}
+              mode={mode}
+              isCpu={opponentType === 'cpu'}
+            />
           </div>
         )}
 
