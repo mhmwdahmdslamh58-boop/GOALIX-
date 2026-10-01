@@ -12,10 +12,30 @@ export function getOrCreateUserProfile(): UserProfile {
     const raw = localStorage.getItem(PROFILE_KEY);
     if (raw) {
       const parsed: UserProfile = JSON.parse(raw);
-      // Migration: Ensure bids and memoryXiWins exist
+      // Migration: Ensure accountId, bids, inventory, and purchaseHistory exist
       let updated = false;
+      if (!parsed.accountId) {
+        parsed.accountId = `GX-${Math.floor(100000 + Math.random() * 900000)}`;
+        updated = true;
+      }
+      if (!Array.isArray(parsed.inventory)) {
+        parsed.inventory = [];
+        updated = true;
+      }
+      if (!Array.isArray(parsed.purchaseHistory)) {
+        parsed.purchaseHistory = [];
+        updated = true;
+      }
       if (typeof parsed.bids !== 'number') {
         parsed.bids = 15; // Starting grant of 15 Bids
+        updated = true;
+      }
+      if (typeof parsed.matchesDrawn !== 'number') {
+        parsed.matchesDrawn = 0;
+        updated = true;
+      }
+      if (typeof parsed.matchesLost !== 'number') {
+        parsed.matchesLost = Math.max(0, parsed.matchesPlayed - parsed.matchesWon);
         updated = true;
       }
       if (typeof parsed.memoryXiWins !== 'number') {
@@ -43,12 +63,17 @@ export function getOrCreateUserProfile(): UserProfile {
 
   const defaultProfile: UserProfile = {
     id: `usr_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
+    accountId: `GX-${Math.floor(100000 + Math.random() * 900000)}`,
     username: 'كابتن جواليكس',
     avatar: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=150&q=80',
-    coins: 50, // Starting grant for 50 Coins
-    bids: 15,  // Starting grant for 15 Bids (enough for Elite Pack)
+    coins: 100, // Starting grant for 100 Coins
+    bids: 20,
+    inventory: [],
+    purchaseHistory: [],
     matchesPlayed: 0,
     matchesWon: 0,
+    matchesDrawn: 0,
+    matchesLost: 0,
     statArenaWins: 0,
     santraWins: 0,
     memoryXiWins: 0,

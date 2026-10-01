@@ -84,14 +84,66 @@ export interface PastWinnerMedal {
   date: string;
 }
 
+export type StoreCategory = 
+  | 'coins'
+  | 'packs'
+  | 'chat_messages'
+  | 'chat_effects'
+  | 'profile_items'
+  | 'special_items'
+  | 'limited_items';
+
+export type ItemRarity = 'common' | 'rare' | 'epic' | 'legendary' | 'mythic';
+
+export interface StoreProduct {
+  id: string;
+  name: string;
+  nameAr: string;
+  category: StoreCategory;
+  price: number;
+  rarity: ItemRarity;
+  description: string;
+  descriptionAr: string;
+  image: string;
+  icon?: string;
+  isFeatured?: boolean;
+  isLimited?: boolean;
+  isNew?: boolean;
+  isActive?: boolean;
+  purchasedCount?: number;
+  tier?: CardTier;
+  stock?: number;
+}
+
+export interface PurchaseRecord {
+  id: string;
+  userId: string;
+  accountId: string;
+  username: string;
+  productId: string;
+  productName: string;
+  category: StoreCategory;
+  price: number;
+  timestamp: number;
+  status: 'completed' | 'refunded';
+}
+
 export interface UserProfile {
   id: string;
+  accountId: string; // Permanent Unique ID e.g. GX-849271
   username: string;
+  email?: string;
   avatar: string;
   coins: number;
   bids: number; // Currency specifically for Store Packs
+  points?: number; // Rank Points for League Leaderboard
+  role?: 'admin' | 'player';
+  inventory?: string[];
+  purchaseHistory?: PurchaseRecord[];
   matchesPlayed: number;
   matchesWon: number;
+  matchesDrawn?: number;
+  matchesLost?: number;
   statArenaWins: number;
   santraWins: number;
   memoryXiWins: number;

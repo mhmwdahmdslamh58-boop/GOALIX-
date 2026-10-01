@@ -81,6 +81,41 @@ export default function App() {
     }
   }, [activeGame, activeRoomCode]);
 
+  // Synchronize user profile with backend server on mount
+  useEffect(() => {
+    async function syncServerProfile() {
+      try {
+        const res = await fetch(`/api/profile/${profile.id}`);
+        const data = await res.json();
+        if (data.success && data.user) {
+          const u = data.user;
+          const synced: UserProfile = {
+            ...profile,
+            id: u.id,
+            accountId: u.accountId || profile.accountId,
+            username: u.username,
+            avatar: u.avatar,
+            coins: u.coins,
+            bids: u.bids || profile.bids,
+            points: u.points || profile.points,
+            inventory: u.inventory || profile.inventory,
+            purchaseHistory: u.purchaseHistory || profile.purchaseHistory,
+            matchesPlayed: u.matchesPlayed ?? profile.matchesPlayed,
+            matchesWon: u.matchesWon ?? profile.matchesWon,
+            matchesDrawn: u.matchesDrawn ?? profile.matchesDrawn,
+            matchesLost: u.matchesLost ?? profile.matchesLost,
+            role: u.role
+          };
+          setProfile(synced);
+          saveUserProfile(synced);
+        }
+      } catch {
+        // Offline or server not ready
+      }
+    }
+    syncServerProfile();
+  }, [profile.id]);
+
   // Sync profile changes
   const handleUpdateProfile = (updated: UserProfile) => {
     setProfile(updated);
@@ -91,12 +126,20 @@ export default function App() {
     const updated: UserProfile = {
       ...profile,
       id: authUser.id,
+      accountId: authUser.accountId,
       username: authUser.username,
+      email: authUser.email,
       avatar: authUser.avatar,
       coins: authUser.coins,
       bids: authUser.bids || 20,
+      points: authUser.points || 0,
+      role: authUser.role,
+      inventory: authUser.inventory || [],
+      purchaseHistory: authUser.purchaseHistory || [],
       matchesPlayed: authUser.matchesPlayed,
-      matchesWon: authUser.matchesWon
+      matchesWon: authUser.matchesWon,
+      matchesDrawn: authUser.matchesDrawn || 0,
+      matchesLost: authUser.matchesLost || 0
     };
     setProfile(updated);
     saveUserProfile(updated);
@@ -260,6 +303,7 @@ export default function App() {
           <StoreScreen
             userProfile={profile}
             onCoinsUpdated={handleCoinsUpdated}
+            onUpdateProfile={handleUpdateProfile}
           />
         )}
       </main>

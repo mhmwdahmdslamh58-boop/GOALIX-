@@ -1,17 +1,23 @@
 // Client Authentication & Session Management
-import { UserProfile } from '../types/game';
+import { UserProfile, PurchaseRecord } from '../types/game';
 import { saveUserProfile } from './storage';
 
 export interface AuthUser {
   id: string;
+  accountId: string; // e.g. GX-849271
   username: string;
+  email?: string;
   role: 'admin' | 'player';
   coins: number;
   bids: number;
   points: number;
   avatar: string;
+  inventory?: string[];
+  purchaseHistory?: PurchaseRecord[];
   matchesPlayed: number;
   matchesWon: number;
+  matchesDrawn?: number;
+  matchesLost?: number;
   createdAt: number;
   lastLogin: number;
 }
@@ -39,11 +45,11 @@ export function saveAuthSession(user: AuthUser | null) {
   }
 }
 
-export async function loginCoach(username: string, password: string): Promise<AuthUser> {
+export async function loginCoach(usernameOrAccountId: string, password: string): Promise<AuthUser> {
   const res = await fetch('/api/auth/login', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ username, password })
+    body: JSON.stringify({ username: usernameOrAccountId, password })
   });
   const data = await res.json();
   if (!res.ok || !data.success) {
@@ -54,15 +60,35 @@ export async function loginCoach(username: string, password: string): Promise<Au
   return user;
 }
 
-export async function registerCoach(username: string, password: string, avatar?: string): Promise<AuthUser> {
+export async function registerCoach(username: string, password: string, avatar?: string, email?: string): Promise<AuthUser> {
   const res = await fetch('/api/auth/register', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ username, password, avatar })
+    body: JSON.stringify({ username, password, avatar, email })
   });
   const data = await res.json();
   if (!res.ok || !data.success) {
     throw new Error(data.error || 'فشل إنشاء الحساب');
+  }
+  const user = data.user as AuthUser;
+  saveAuthSession(user);
+  return user;
+}
+
+export async function loginWithGoogle(googleData: {
+  googleId?: string;
+  email: string;
+  name: string;
+  avatar?: string;
+}): Promise<AuthUser> {
+  const res = await fetch('/api/auth/google', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(googleData)
+  });
+  const data = await res.json();
+  if (!res.ok || !data.success) {
+    throw new Error(data.error || 'فشل تسجيل الدخول باستخدام Google');
   }
   const user = data.user as AuthUser;
   saveAuthSession(user);
@@ -82,10 +108,12 @@ export function isDeveloperAdmin(user?: UserProfile | AuthUser | null): boolean 
   if (!user) return false;
   if ('role' in user && user.role === 'admin') return true;
   const name = user.username.trim();
+  const accountId = 'accountId' in user ? user.accountId : '';
   return (
     name === 'محمود أحمد سلامة' || 
     name === 'محمود سلامه' || 
     name === 'Mahmoud Ahmed Salama' ||
-    user.id === 'dev_mahmoud_salama'
+    user.id === 'dev_mahmoud_salama' ||
+    accountId === 'GX-999999'
   );
 }

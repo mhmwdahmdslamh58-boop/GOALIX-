@@ -1,20 +1,25 @@
 import express, { Request, Response } from 'express';
-import { createServer as createViteServer } from 'vite';
 import path from 'path';
+import fs from 'fs';
 import { roomManager } from './server/roomManager';
 import { rankingManager } from './server/rankingManager';
 import { adminDb } from './server/adminDb';
 
 const app = express();
-const PORT = process.env.PORT ? parseInt(process.env.PORT) : 3000;
+const PORT = Number(process.env.PORT) || 3000;
 
 app.use(express.json());
+
+// Root Health Check endpoint required for Google Cloud Run
+app.get('/health', (_req: Request, res: Response) => {
+  res.status(200).json({ status: 'ok' });
+});
 
 // API Router
 const apiRouter = express.Router();
 
 apiRouter.get('/health', (_req: Request, res: Response) => {
-  res.json({ status: 'ok', serverTime: Date.now() });
+  res.status(200).json({ status: 'ok', serverTime: Date.now() });
 });
 
 // Create Room
@@ -229,7 +234,7 @@ apiRouter.post('/auth/login', (req: Request, res: Response) => {
   try {
     const { username, password } = req.body;
     if (!username || !username.trim()) {
-      return res.status(400).json({ error: 'يرجى إدخال اسم المدرب' });
+      return res.status(400).json({ error: 'يرجى إدخال اسم المدرب أو Account ID' });
     }
     const user = adminDb.authenticate(username, password);
     if (!user) {
@@ -240,6 +245,98 @@ apiRouter.post('/auth/login', (req: Request, res: Response) => {
   } catch (err: unknown) {
     const message = err instanceof Error ? err.message : 'فشل تسجيل الدخول';
     res.status(500).json({ error: message });
+  }
+});
+
+// Google Sign-In & Instant Account Linking
+apiRouter.post('/auth/google', (req: Request, res: Response) => {
+  try {
+    const { googleId, email, name, avatar } = req.body;
+    if (!email) {
+      return res.status(400).json({ error: 'البريد الإلكتروني مطلوب' });
+    }
+    const user = adminDb.handleGoogleLogin({
+      googleId: googleId || `g_${Date.now()}`,
+      email,
+      name: name || email.split('@')[0],
+      avatar
+    });
+    rankingManager.syncUserProfile(user.id, user.username, user.avatar);
+    res.json({ success: true, user });
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : 'فشل تسجيل الدخول عبر Google';
+    res.status(500).json({ error: message });
+  }
+});
+
+// Profile Management
+apiRouter.post('/profile/update-username', (req: Request, res: Response) => {
+  try {
+    const { userId, newUsername } = req.body;
+    if (!userId || !newUsername) {
+      return res.status(400).json({ error: 'المعرف واسم المستخدم الجديد مطلوبان' });
+    }
+    const user = adminDb.updateUsername(userId, newUsername);
+    rankingManager.syncUserProfile(user.id, user.username, user.avatar);
+    res.json({ success: true, user });
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : 'فشل تحديث الاسم';
+    res.status(400).json({ error: message });
+  }
+});
+
+apiRouter.post('/profile/update-avatar', (req: Request, res: Response) => {
+  try {
+    const { userId, avatar } = req.body;
+    if (!userId || !avatar) {
+      return res.status(400).json({ error: 'المعرف والصورة مطلوبان' });
+    }
+    const user = adminDb.updateAvatar(userId, avatar);
+    rankingManager.syncUserProfile(user.id, user.username, user.avatar);
+    res.json({ success: true, user });
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : 'فشل تحديث الصورة';
+    res.status(400).json({ error: message });
+  }
+});
+
+apiRouter.get('/profile/:id', (req: Request, res: Response) => {
+  try {
+    const user = adminDb.getUser(req.params.id);
+    if (!user) {
+      return res.status(404).json({ error: 'المستخدم غير موجود' });
+    }
+    res.json({ success: true, user });
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : 'خطأ في جلب الملف الشخصي';
+    res.status(500).json({ error: message });
+  }
+});
+
+// ================= STORE & REAL PURCHASES =================
+apiRouter.get('/store/products', (req: Request, res: Response) => {
+  try {
+    const category = req.query.category as any;
+    const products = adminDb.getStoreProducts(category);
+    res.json({ success: true, products });
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : 'فشل جلب منتجات المتجر';
+    res.status(500).json({ error: message });
+  }
+});
+
+apiRouter.post('/store/purchase', (req: Request, res: Response) => {
+  try {
+    const { userId, productId } = req.body;
+    if (!userId || !productId) {
+      return res.status(400).json({ error: 'معرف المستخدم ومعرف المنتج مطلوبان' });
+    }
+    const result = adminDb.purchaseProduct(userId, productId);
+    rankingManager.syncUserProfile(result.user.id, result.user.username, result.user.avatar);
+    res.json(result);
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : 'فشل إتمام الشراء';
+    res.status(400).json({ error: message });
   }
 });
 
@@ -259,6 +356,76 @@ apiRouter.get('/admin/database', (req: Request, res: Response) => {
   } catch (err: unknown) {
     const message = err instanceof Error ? err.message : 'فشل جلب بيانات الإدارة';
     res.status(500).json({ error: message });
+  }
+});
+
+apiRouter.post('/admin/search-player', (req: Request, res: Response) => {
+  try {
+    const { query } = req.body;
+    if (!query) {
+      return res.status(400).json({ error: 'يرجى إدخال Account ID أو اسم المستخدم' });
+    }
+    const user = adminDb.getUser(query);
+    if (!user) {
+      return res.status(404).json({ error: 'لم يتم العثور على أي لاعب بهذا الـ ID أو الاسم' });
+    }
+    res.json({ success: true, user });
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : 'خطأ في البحث';
+    res.status(500).json({ error: message });
+  }
+});
+
+apiRouter.post('/admin/adjust-coins', (req: Request, res: Response) => {
+  try {
+    const { targetUserIdOrAccountId, coinsDelta, adminId, reason } = req.body;
+    if (!targetUserIdOrAccountId || typeof coinsDelta !== 'number') {
+      return res.status(400).json({ error: 'البيانات غير مكتملة' });
+    }
+    const user = adminDb.adjustUserCoins(
+      targetUserIdOrAccountId, 
+      coinsDelta, 
+      adminId || 'dev_mahmoud_salama', 
+      reason
+    );
+    res.json({ success: true, user });
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : 'فشل تعديل رصيد الكوينز';
+    res.status(400).json({ error: message });
+  }
+});
+
+apiRouter.post('/admin/products/create', (req: Request, res: Response) => {
+  try {
+    const product = adminDb.createStoreProduct(req.body);
+    res.json({ success: true, product });
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : 'فشل إنشاء المنتج';
+    res.status(400).json({ error: message });
+  }
+});
+
+apiRouter.post('/admin/products/update', (req: Request, res: Response) => {
+  try {
+    const { id, ...updates } = req.body;
+    if (!id) return res.status(400).json({ error: 'معرف المنتج مطلوب' });
+    const product = adminDb.updateStoreProduct(id, updates);
+    res.json({ success: true, product });
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : 'فشل تعديل المنتج';
+    res.status(400).json({ error: message });
+  }
+});
+
+apiRouter.post('/admin/products/delete', (req: Request, res: Response) => {
+  try {
+    const { id } = req.body;
+    if (!id) return res.status(400).json({ error: 'معرف المنتج مطلوب' });
+    const success = adminDb.deleteStoreProduct(id);
+    res.json({ success });
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : 'فشل حذف المنتج';
+    res.status(400).json({ error: message });
   }
 });
 
@@ -287,12 +454,22 @@ app.use(express.static(path.resolve('public')));
 app.use('/api', apiRouter);
 
 async function start() {
-  if (process.env.NODE_ENV === 'production') {
-    app.use(express.static('dist'));
-    app.get('*', (_req: Request, res: Response) => {
-      res.sendFile(path.resolve('dist', 'index.html'));
+  const distPath = path.resolve('dist');
+  const hasDist = fs.existsSync(path.join(distPath, 'index.html'));
+  const isProduction = process.env.NODE_ENV === 'production' || (hasDist && process.env.NODE_ENV !== 'development');
+
+  if (isProduction) {
+    console.log(`Starting in PRODUCTION mode. Serving static assets from ${distPath}`);
+    app.use(express.static(distPath));
+    app.get('*', (req: Request, res: Response, next) => {
+      if (req.path.startsWith('/api') || req.path === '/health') {
+        return next();
+      }
+      res.sendFile(path.join(distPath, 'index.html'));
     });
   } else {
+    console.log('Starting in DEVELOPMENT mode with Vite middleware');
+    const { createServer: createViteServer } = await import('vite');
     const vite = await createViteServer({
       server: { middlewareMode: true },
       appType: 'spa',
@@ -300,9 +477,20 @@ async function start() {
     app.use(vite.middlewares);
   }
 
-  app.listen(PORT, '0.0.0.0', () => {
-    console.log(`GOALIX server listening on http://0.0.0.0:${PORT}`);
+  const server = app.listen(PORT, '0.0.0.0', () => {
+    console.log(`GOALIX server listening on http://0.0.0.0:${PORT} (mode: ${isProduction ? 'production' : 'development'})`);
   });
+
+  const shutdown = () => {
+    console.log('Shutting down server gracefully...');
+    server.close(() => {
+      console.log('Server closed successfully.');
+      process.exit(0);
+    });
+  };
+
+  process.on('SIGTERM', shutdown);
+  process.on('SIGINT', shutdown);
 }
 
 start();
