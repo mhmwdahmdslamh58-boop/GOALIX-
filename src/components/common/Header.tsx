@@ -1,139 +1,126 @@
-import React, { useState } from 'react';
-import { Coins, Volume2, VolumeX, User, Wifi, ShieldCheck, LogIn, Crown } from 'lucide-react';
-import { sounds } from '../../services/audio';
+import React from 'react';
 import { UserProfile } from '../../types/game';
-import { isDeveloperAdmin } from '../../services/auth';
+import { sounds } from '../../services/audio';
+import { getRankTierInfo, getFormattedAccountId } from '../../services/storage';
+import { Coins, Trophy, Settings, Shield } from 'lucide-react';
 
 interface HeaderProps {
-  userProfile: UserProfile;
-  onOpenProfile: () => void;
-  onOpenStore: () => void;
-  onOpenRooms: () => void;
-  onOpenAuth?: () => void;
-  onOpenAdmin?: () => void;
+  profile: UserProfile;
+  onNavigate?: (tab: 'home' | 'games' | 'rooms' | 'squad' | 'store' | 'collection' | 'ranking') => void;
+  onOpenProfile?: () => void;
+  onOpenSettings?: () => void;
 }
 
 export const Header: React.FC<HeaderProps> = ({
-  userProfile,
+  profile,
+  onNavigate,
   onOpenProfile,
-  onOpenStore,
-  onOpenRooms,
-  onOpenAuth,
-  onOpenAdmin
+  onOpenSettings,
 }) => {
-  const [soundOn, setSoundOn] = useState(sounds.isEnabled());
-  const isAdmin = isDeveloperAdmin(userProfile);
-
-  const handleToggleSound = () => {
-    sounds.playButtonClick();
-    const next = sounds.toggleSound();
-    setSoundOn(next);
-  };
+  const rankInfo = getRankTierInfo(profile.rankPoints ?? 0);
+  const unopenedCount = (profile.santraChests?.length || 0) + (profile.ownedPacks?.length || 0);
+  const displayName = profile.username || 'كابتن جواليكس';
+  const accountId = getFormattedAccountId(profile);
 
   return (
-    <header className="sticky top-0 z-40 w-full bg-[#0a0b0e]/95 backdrop-blur-md border-b border-zinc-800/80 px-4 py-2.5 flex items-center justify-between">
-      {/* Zone 1: Brand Zone */}
-      <div className="flex items-center gap-2">
-        <div className="flex items-center gap-1.5">
-          <div className="w-8 h-8 rounded-lg bg-gradient-to-tr from-amber-600 via-amber-400 to-yellow-200 p-[1px] flex items-center justify-center shadow-[0_2px_8px_rgba(212,175,55,0.3)]">
-            <div className="w-full h-full bg-zinc-950 rounded-[7px] flex items-center justify-center font-chakra font-black text-amber-400 text-sm tracking-tighter">
-              GX
+    <header className="sticky top-0 z-40 backdrop-blur-xl bg-zinc-950/90 border-b border-amber-500/20 px-3 sm:px-4 py-2.5 shadow-[0_6px_25px_rgba(0,0,0,0.6)]">
+      <div className="max-w-4xl mx-auto flex items-center justify-between gap-2">
+        {/* Brand Logo & User Profile Trigger */}
+        <div className="flex items-center gap-2.5">
+          <button
+            onClick={() => {
+              sounds.playTap();
+              onNavigate?.('home');
+            }}
+            className="flex items-center gap-2 group text-right"
+          >
+            <div className="relative w-10 h-10 rounded-xl bg-gradient-to-br from-amber-300 via-yellow-500 to-amber-700 p-[1.5px] shadow-[0_0_20px_rgba(245,158,11,0.35)] group-hover:scale-105 transition-transform">
+              <div className="w-full h-full bg-zinc-950 rounded-[10px] flex items-center justify-center">
+                <Trophy className="w-5 h-5 text-amber-400" />
+              </div>
             </div>
-          </div>
-          <span className="font-chakra font-black text-lg tracking-wider bg-gradient-to-r from-white via-zinc-100 to-amber-300 bg-clip-text text-transparent">
-            GOALIX
-          </span>
+            <div className="hidden xs:block">
+              <h1 className="font-chakra text-lg font-black tracking-tight bg-gradient-to-r from-amber-200 via-yellow-400 to-amber-500 bg-clip-text text-transparent leading-none">
+                GOALIX
+              </h1>
+              <p className="text-[9px] text-zinc-400 font-bold tracking-widest uppercase mt-0.5">
+                FOOTBALL ARENA
+              </p>
+            </div>
+          </button>
+
+          {/* User Profile & Rank Badge Pill */}
+          <button
+            onClick={() => {
+              sounds.playTap();
+              onOpenProfile?.();
+            }}
+            className="flex items-center gap-2 bg-zinc-900/90 hover:bg-zinc-800 border border-zinc-800 hover:border-amber-500/40 rounded-xl px-2.5 py-1.5 transition-all"
+            title="الملف الشخصي والإحصائيات"
+          >
+            <div className="w-7 h-7 rounded-lg bg-gradient-to-br from-amber-500/25 to-zinc-900 border border-amber-500/40 flex items-center justify-center text-amber-300 font-black text-xs">
+              {displayName.charAt(0)}
+            </div>
+            <div className="text-right">
+              <div className="text-[11px] font-black text-white leading-tight max-w-[90px] sm:max-w-[130px] truncate">
+                {displayName}
+              </div>
+              <div className="flex items-center gap-1 text-[9px] font-black text-amber-400">
+                <span>{rankInfo.badgeIcon}</span>
+                <span className="font-chakra text-amber-300">{accountId}</span>
+                <span className="text-zinc-500">•</span>
+                <span className="font-chakra text-emerald-400">{profile.rankPoints ?? 0} RP</span>
+              </div>
+            </div>
+          </button>
         </div>
-      </div>
 
-      {/* Zone 2: Actions & Balance */}
-      <div className="flex items-center gap-1.5 sm:gap-2">
-        {/* Admin & Private Database Room (for Developer / Admin) */}
-        {isAdmin && onOpenAdmin && (
+        {/* Right Controls: Squad Button, Coins, Settings */}
+        <div className="flex items-center gap-1.5 sm:gap-2">
           <button
             onClick={() => {
-              sounds.playButtonClick();
-              onOpenAdmin();
+              sounds.playTap();
+              onNavigate?.('squad');
             }}
-            onMouseEnter={() => sounds.playButtonHover()}
-            className="flex items-center gap-1 py-1 px-2 rounded-lg bg-gradient-to-r from-amber-500/25 to-yellow-500/30 border border-amber-400 text-amber-300 text-xs font-bold font-tajawal hover:opacity-90 active:scale-95 transition-all cursor-pointer shadow-[0_0_10px_rgba(212,175,55,0.3)]"
-            title="غرفة الإدارة وقاعدة البيانات الخاصة بي"
+            className="hidden sm:flex items-center gap-1.5 bg-zinc-900/90 hover:bg-zinc-800 border border-zinc-800 hover:border-amber-500/40 px-2.5 py-1.5 rounded-xl text-xs font-black text-zinc-200 transition-all"
+            title="تشكيلتي التكتيكية"
           >
-            <Crown className="w-3.5 h-3.5 text-amber-400" />
-            <span className="font-bold">الإدارة</span>
+            <Shield className="w-3.5 h-3.5 text-amber-400" />
+            <span>تشكيلتي</span>
           </button>
-        )}
 
-        {/* Login / Auth Button */}
-        {onOpenAuth && (
+          {/* Coins & Vault Counter */}
           <button
             onClick={() => {
-              sounds.playButtonClick();
-              onOpenAuth();
+              sounds.playTap();
+              onNavigate?.('store');
             }}
-            onMouseEnter={() => sounds.playButtonHover()}
-            className="flex items-center gap-1 py-1 px-2 rounded-lg bg-zinc-900 border border-zinc-700/80 hover:border-amber-400/60 text-xs text-zinc-300 transition-all cursor-pointer"
-            title="تسجيل الدخول / تبديل الحساب"
+            className="relative flex items-center gap-1.5 bg-gradient-to-b from-zinc-900 to-zinc-950 hover:from-zinc-800 hover:to-zinc-900 border border-amber-500/35 px-3 py-1.5 rounded-xl shadow-[0_3px_0_rgba(180,83,9,0.4)] active:translate-y-0.5 transition-all"
+            title="الباكات والمكافآت والرصيد"
           >
-            <LogIn className="w-3.5 h-3.5 text-amber-400" />
-            <span className="hidden sm:inline font-medium">تسجيل</span>
+            <Coins className="w-4 h-4 text-amber-400 shrink-0" />
+            <span className="font-chakra text-xs sm:text-sm font-black text-amber-300">
+              {Math.max(0, profile.coins).toLocaleString()}
+            </span>
+            {unopenedCount > 0 && (
+              <span className="-top-1.5 -left-1.5 absolute min-w-[18px] h-[18px] px-1 rounded-full bg-emerald-500 text-zinc-950 font-black text-[10px] flex items-center justify-center shadow">
+                {unopenedCount}
+              </span>
+            )}
           </button>
-        )}
 
-        {/* Rooms Shortcut Button */}
-        <button
-          onClick={() => {
-            sounds.playButtonClick();
-            onOpenRooms();
-          }}
-          onMouseEnter={() => sounds.playButtonHover()}
-          className="flex items-center gap-1.5 py-1 px-2.5 rounded-lg bg-zinc-900 border border-amber-500/30 text-amber-300 text-xs font-tajawal hover:bg-zinc-800 active:translate-y-0.5 transition-all cursor-pointer"
-          title="غرف الأونلاين"
-        >
-          <Wifi className="w-3.5 h-3.5 text-amber-400" />
-          <span className="hidden xs:inline font-medium">أونلاين</span>
-        </button>
-
-        {/* Coins Badge (Clickable to Store) */}
-        <button
-          onClick={() => {
-            sounds.playButtonClick();
-            onOpenStore();
-          }}
-          onMouseEnter={() => sounds.playButtonHover()}
-          className="flex items-center gap-1.5 py-1 px-2.5 rounded-lg bg-amber-950/40 border border-amber-500/40 hover:border-amber-400/80 active:translate-y-0.5 transition-all text-amber-300 font-chakra font-bold text-xs cursor-pointer"
-          title="متجر الكوينز"
-        >
-          <Coins className="w-3.5 h-3.5 text-amber-400" />
-          <span className="tabular-nums">{userProfile.coins}</span>
-        </button>
-
-        {/* Sound Toggle */}
-        <button
-          onClick={handleToggleSound}
-          onMouseEnter={() => sounds.playButtonHover()}
-          className="w-8 h-8 rounded-lg bg-zinc-900 border border-zinc-800 flex items-center justify-center text-zinc-400 hover:text-zinc-200 active:scale-95 transition-all cursor-pointer"
-          title={soundOn ? 'كتم الصوت' : 'تشغيل الصوت'}
-        >
-          {soundOn ? <Volume2 className="w-4 h-4 text-amber-400/80" /> : <VolumeX className="w-4 h-4 text-zinc-500" />}
-        </button>
-
-        {/* Profile Avatar */}
-        <button
-          onClick={() => {
-            sounds.playButtonClick();
-            onOpenProfile();
-          }}
-          onMouseEnter={() => sounds.playButtonHover()}
-          className="w-8 h-8 rounded-lg bg-zinc-800 border border-amber-500/30 overflow-hidden flex items-center justify-center hover:border-amber-400 transition-all active:scale-95 cursor-pointer"
-          title="الملف الشخصي"
-        >
-          {userProfile.avatar ? (
-            <img src={userProfile.avatar} alt={userProfile.username} className="w-full h-full object-cover" />
-          ) : (
-            <User className="w-4 h-4 text-amber-300" />
-          )}
-        </button>
+          {/* Settings Trigger */}
+          <button
+            onClick={() => {
+              sounds.playTap();
+              onOpenSettings?.();
+            }}
+            className="w-9 h-9 rounded-xl bg-zinc-900/90 hover:bg-zinc-800 border border-zinc-800 hover:border-amber-500/40 flex items-center justify-center text-zinc-300 hover:text-amber-400 transition-all shadow-[0_3px_0_rgba(0,0,0,0.5)] active:translate-y-0.5"
+            title="الإعدادات وقاعدة البيانات"
+          >
+            <Settings className="w-4 h-4" />
+          </button>
+        </div>
       </div>
     </header>
   );

@@ -1,18 +1,19 @@
-import { 
-  OnlineRoomState, 
-  GameId, 
-  GameMode, 
-  PositionType, 
-  RoomPhase, 
-  Player, 
-  StatQuestion 
+import {
+  OnlineRoomState,
+  GameId,
+  GameMode,
+  RoomVisibilityType,
+  RoomTimerDuration,
+  RoomChatMessageEvent,
 } from '../src/types/game';
 import { getQuestionsForGame } from '../src/data/questions';
-import { getRandomPlayerByPosition, getRandomPlayerByClubAndPosition } from '../src/data/players';
+import {
+  getRandomPlayerByPosition,
+  getRandomPlayerByClubAndPosition,
+} from '../src/data/players';
 import { getRandomClubsForRound } from '../src/data/clubs';
-import { getPositionOrder, QUICK_FIVE_POSITIONS, FULL_ELEVEN_POSITIONS } from '../src/services/positions';
-import { rankingManager } from './rankingManager';
-import { adminDb } from './adminDb';
+import { getPositionOrder } from '../src/services/positions';
+import { leagueAndStoreManager, deriveGxAccountId } from './leagueAndStoreManager';
 
 interface RoomSubscriber {
   id: string;
@@ -37,8 +38,27 @@ class RoomManager {
     return this.rooms.get(code.toUpperCase());
   }
 
-  public getAllRooms(): OnlineRoomState[] {
-    return Array.from(this.rooms.values());
+  public getAllActiveRooms(): OnlineRoomState[] {
+    return Array.from(this.rooms.values()).sort((a, b) => b.updatedAt - a.updatedAt);
+  }
+
+  /**
+   * Returns only PUBLIC rooms currently waiting for Player 2.
+   * Private rooms do not appear in the public list and require a Room Code.
+   */
+  public getWaitingRooms(): OnlineRoomState[] {
+    const now = Date.now();
+    const list: OnlineRoomState[] = [];
+    this.rooms.forEach((room, code) => {
+      if (now - room.updatedAt > 2 * 60 * 60 * 1000) {
+        this.rooms.delete(code);
+        return;
+      }
+      if (room.phase === 'WAITING' && room.roomType === 'PUBLIC' && !room.participants.guest) {
+        list.push(room);
+      }
+    });
+    return list.sort((a, b) => b.updatedAt - a.updatedAt).slice(0, 20);
   }
 
   public subscribe(code: string, subId: string, callback: (state: OnlineRoomState) => void) {
@@ -53,37 +73,48 @@ class RoomManager {
     const upper = code.toUpperCase();
     const subs = this.subscribers.get(upper);
     if (subs) {
-      this.subscribers.set(upper, subs.filter(s => s.id !== subId));
+      this.subscribers.set(
+        upper,
+        subs.filter((s) => s.id !== subId)
+      );
     }
   }
 
   private broadcast(room: OnlineRoomState) {
     const subs = this.subscribers.get(room.code);
     if (subs) {
-      subs.forEach(sub => {
+      subs.forEach((sub) => {
         try {
           sub.callback(room);
         } catch {
-          // subscriber connection closed
+          // subscriber closed
         }
       });
     }
   }
 
   public createRoom(
-    hostId: string, 
-    hostName: string, 
-    gameId: GameId = 'stat_arena', 
-    mode: GameMode = 'quick_five'
+    hostId: string,
+    hostName: string,
+    gameId: GameId = 'stat_arena',
+    mode: GameMode = 'quick_five',
+    roomType: RoomVisibilityType = 'PUBLIC',
+    timerSeconds: RoomTimerDuration = 30,
+    chatEnabled = true
   ): OnlineRoomState {
     const code = this.generateCode();
     const positions = getPositionOrder(mode);
+    const validTimers: RoomTimerDuration[] = [15, 30, 45, 60];
+    const cleanTimer: RoomTimerDuration = validTimers.includes(timerSeconds) ? timerSeconds : 30;
 
     const room: OnlineRoomState = {
       code,
       hostId,
       gameId,
       mode,
+      roomType: roomType === 'PRIVATE' ? 'PRIVATE' : 'PUBLIC',
+      timerSeconds: cleanTimer,
+      chatEnabled: Boolean(chatEnabled),
       phase: 'WAITING',
       currentRoundIndex: 0,
       totalRounds: positions.length,
@@ -91,18 +122,23 @@ class RoomManager {
       participants: {
         host: {
           id: hostId,
-          name: hostName || 'المضيف',
+          accountId: deriveGxAccountId(hostId),
+          name: hostName || 'اللاعب 1',
           ready: false,
           score: 0,
           diffSum: 0,
           squad: [],
-          connected: true
-        }
+          messagesSentCount: 0,
+          lastMessageAt: 0,
+          connected: true,
+        },
       },
-      updatedAt: Date.now()
+      chatMessages: [],
+      updatedAt: Date.now(),
     };
 
     this.rooms.set(code, room);
+    leagueAndStoreManager.touchRoomPlayer(hostId, hostName || 'اللاعب 1');
     return room;
   }
 
@@ -112,7 +148,10 @@ class RoomManager {
       throw new Error('رمز الغرفة غير صحيح أو أن الغرفة غير موجودة');
     }
 
-    // Cancel any pending disconnect timer for this guest
+    if (room.hostId === guestId) {
+      return room;
+    }
+
     const timerKey = `${code}_${guestId}`;
     if (this.disconnectTimers.has(timerKey)) {
       clearTimeout(this.disconnectTimers.get(timerKey)!);
@@ -120,21 +159,29 @@ class RoomManager {
     }
 
     if (room.participants.guest && room.participants.guest.id !== guestId) {
-      throw new Error('الغرفة ممتلئة بالفعل بلاعبين اثنين');
+      throw new Error('الغرفة مكتملة بالفعل (Player 1 VS Player 2 فقط)');
     }
 
     if (!room.participants.guest || room.participants.guest.id === guestId) {
       room.participants.guest = {
         id: guestId,
-        name: guestName || room.participants.guest?.name || 'الضيف',
+        accountId: deriveGxAccountId(guestId),
+        name: guestName || room.participants.guest?.name || 'اللاعب 2',
         ready: room.participants.guest?.ready || false,
         score: room.participants.guest?.score || 0,
         diffSum: room.participants.guest?.diffSum || 0,
         squad: room.participants.guest?.squad || [],
-        connected: true
+        messagesSentCount: room.participants.guest?.messagesSentCount || 0,
+        lastMessageAt: room.participants.guest?.lastMessageAt || 0,
+        connected: true,
       };
     }
 
+    if (room.phase === 'WAITING') {
+      room.phase = 'PLAYER_2_JOINED';
+    }
+
+    leagueAndStoreManager.touchRoomPlayer(guestId, guestName || 'اللاعب 2');
     room.updatedAt = Date.now();
     this.broadcast(room);
     return room;
@@ -148,11 +195,14 @@ class RoomManager {
       room.participants.host.ready = isReady;
     } else if (room.participants.guest?.id === userId) {
       room.participants.guest.ready = isReady;
+    } else {
+      throw new Error('أنت لست عضوًا في هذه الغرفة');
     }
 
-    // If both ready and we have guest, start match!
     if (room.participants.host.ready && room.participants.guest?.ready) {
       this.startMatch(room);
+    } else if (room.participants.guest) {
+      room.phase = 'PLAYER_2_JOINED';
     }
 
     room.updatedAt = Date.now();
@@ -160,13 +210,42 @@ class RoomManager {
     return room;
   }
 
-  public selectGame(code: string, hostId: string, gameId: GameId, mode: GameMode): OnlineRoomState {
+  public startRoomMatch(code: string, hostId: string): OnlineRoomState {
     const room = this.getRoom(code);
     if (!room) throw new Error('الغرفة غير موجودة');
-    if (room.hostId !== hostId) throw new Error('فقط المضيف يمكنه تغيير إعدادات الغرفة');
+    if (room.hostId !== hostId) throw new Error('فقط مضيف الغرفة يمكنه بدء المباراة');
+    if (!room.participants.guest) {
+      throw new Error('يجب دخول اللاعب الثاني (Player 2) أولاً لبدء المباراة');
+    }
+    if (!room.participants.host.ready || !room.participants.guest.ready) {
+      throw new Error('يجب أن يضغط اللاعبان على [ جاهز ] أولاً');
+    }
+    this.startMatch(room);
+    room.updatedAt = Date.now();
+    this.broadcast(room);
+    return room;
+  }
+
+  public selectGame(
+    code: string,
+    hostId: string,
+    gameId: GameId,
+    mode: GameMode,
+    timerSeconds?: RoomTimerDuration,
+    chatEnabled?: boolean
+  ): OnlineRoomState {
+    const room = this.getRoom(code);
+    if (!room) throw new Error('الغرفة غير موجودة');
+    if (room.hostId !== hostId) throw new Error('فقط مضيف الغرفة يمكنه تعديل الإعدادات');
 
     room.gameId = gameId;
     room.mode = mode;
+    if (timerSeconds && [15, 30, 45, 60].includes(timerSeconds)) {
+      room.timerSeconds = timerSeconds;
+    }
+    if (typeof chatEnabled === 'boolean') {
+      room.chatEnabled = chatEnabled;
+    }
     const positions = getPositionOrder(mode);
     room.positionOrder = positions;
     room.totalRounds = positions.length;
@@ -176,13 +255,77 @@ class RoomManager {
     return room;
   }
 
+  /**
+   * Server-Side Quick Chat Validation:
+   * - Chat must be ON for this room
+   * - Max 6 messages per player per match
+   * - 15 seconds cooldown between messages
+   * - Player must own the message
+   */
+  public sendQuickChatMessage(code: string, userId: string, messageId: string): OnlineRoomState {
+    const room = this.getRoom(code);
+    if (!room) throw new Error('الغرفة غير موجودة');
+    if (!room.chatEnabled) {
+      throw new Error('الشات مغلق في إعدادات هذه المباراة');
+    }
+
+    const participant =
+      room.hostId === userId
+        ? room.participants.host
+        : room.participants.guest?.id === userId
+        ? room.participants.guest
+        : null;
+
+    if (!participant) {
+      throw new Error('غير مصرح لك بإرسال رسائل في هذه الغرفة');
+    }
+
+    if (participant.messagesSentCount >= 6) {
+      throw new Error('خلصت رسائلك في المباراة (الحد الأقصى 6 رسائل)');
+    }
+
+    const now = Date.now();
+    const elapsedMs = now - (participant.lastMessageAt || 0);
+    if (participant.lastMessageAt > 0 && elapsedMs < 15000) {
+      const waitSec = Math.ceil((15000 - elapsedMs) / 1000);
+      throw new Error(`يرجى الانتظار ${waitSec} ثانية قبل إرسال الرسالة التالية`);
+    }
+
+    const ownedMsg = leagueAndStoreManager.doesPlayerOwnChatMessage(userId, messageId);
+    if (!ownedMsg) {
+      throw new Error('هذه الرسالة غير مملوكة في مجموعتك');
+    }
+
+    participant.messagesSentCount += 1;
+    participant.lastMessageAt = now;
+
+    const event: RoomChatMessageEvent = {
+      id: `chat_${now}_${Math.random().toString(36).substring(2, 6)}`,
+      senderId: userId,
+      senderName: participant.name,
+      messageId: ownedMsg.id,
+      textAr: ownedMsg.textAr,
+      category: ownedMsg.category,
+      timestamp: now,
+    };
+
+    room.chatMessages = [...(room.chatMessages || []), event].slice(-30);
+    room.updatedAt = now;
+    this.broadcast(room);
+    return room;
+  }
+
   private startMatch(room: OnlineRoomState) {
     room.currentRoundIndex = 0;
     room.participants.host.squad = [];
     room.participants.host.diffSum = 0;
+    room.participants.host.messagesSentCount = 0;
+    room.participants.host.lastMessageAt = 0;
     if (room.participants.guest) {
       room.participants.guest.squad = [];
       room.participants.guest.diffSum = 0;
+      room.participants.guest.messagesSentCount = 0;
+      room.participants.guest.lastMessageAt = 0;
     }
 
     this.prepareRound(room);
@@ -191,7 +334,6 @@ class RoomManager {
   private prepareRound(room: OnlineRoomState) {
     const currentPos = room.positionOrder[room.currentRoundIndex];
 
-    // Reset round state
     room.participants.host.currentAnswer = null;
     room.participants.host.currentBoxSelection = null;
     if (room.participants.guest) {
@@ -200,6 +342,7 @@ class RoomManager {
     }
     room.lastRoundWinner = null;
     room.lastRoundLoserReward = null;
+    room.roundDeadlineAt = Date.now() + (room.timerSeconds || 30) * 1000;
 
     if (room.gameId === 'stat_arena') {
       room.phase = 'QUESTION_ACTIVE';
@@ -207,8 +350,9 @@ class RoomManager {
       room.currentQuestion = questions[0];
     } else if (room.gameId === 'santra') {
       room.phase = 'MYSTERY_SELECTION';
-      const clubs = getRandomClubsForRound(4);
-      room.currentRoundClubs = clubs.map(c => c.name);
+      // 3 identical mystery boxes from outside
+      const clubs = getRandomClubsForRound(3);
+      room.currentRoundClubs = clubs.map((c) => c.name);
     }
 
     room.updatedAt = Date.now();
@@ -217,9 +361,8 @@ class RoomManager {
   public submitStatAnswer(code: string, userId: string, answer: number): OnlineRoomState {
     const room = this.getRoom(code);
     if (!room) throw new Error('الغرفة غير موجودة');
-    if (room.phase !== 'QUESTION_ACTIVE') throw new Error('ليس وقت الإجابة حالياً');
+    if (room.phase !== 'QUESTION_ACTIVE') throw new Error('انتهى وقت الإجابة لهذه الجولة');
 
-    // Anti-cheat validation: answer must be positive finite number
     if (typeof answer !== 'number' || answer < 0 || !Number.isFinite(answer)) {
       throw new Error('إجابة غير صالحة');
     }
@@ -229,10 +372,9 @@ class RoomManager {
     } else if (room.participants.guest?.id === userId) {
       room.participants.guest.currentAnswer = answer;
     } else {
-      throw new Error('المستخدم ليس عضواً في هذه الغرفة');
+      throw new Error('المستخدم ليس عضوًا في هذه الغرفة');
     }
 
-    // Check if both answered
     const hostAns = room.participants.host.currentAnswer;
     const guestAns = room.participants.guest?.currentAnswer;
 
@@ -250,19 +392,23 @@ class RoomManager {
 
       if (hostDiff < guestDiff) {
         room.lastRoundWinner = 'host';
-        const rewardPlayer = getRandomPlayerByPosition(currentPos);
-        room.participants.guest!.squad.push(rewardPlayer);
+        const pHost = getRandomPlayerByPosition(currentPos);
+        const pGuest = getRandomPlayerByPosition(currentPos, [pHost.id]);
+        room.participants.host.squad.push(pHost);
+        room.participants.guest!.squad.push(pGuest);
         room.lastRoundLoserReward = {
           recipientId: room.participants.guest!.id,
-          player: rewardPlayer
+          player: pGuest,
         };
       } else if (guestDiff < hostDiff) {
         room.lastRoundWinner = 'guest';
-        const rewardPlayer = getRandomPlayerByPosition(currentPos);
-        room.participants.host.squad.push(rewardPlayer);
+        const pGuest = getRandomPlayerByPosition(currentPos);
+        const pHost = getRandomPlayerByPosition(currentPos, [pGuest.id]);
+        room.participants.guest!.squad.push(pGuest);
+        room.participants.host.squad.push(pHost);
         room.lastRoundLoserReward = {
           recipientId: room.hostId,
-          player: rewardPlayer
+          player: pHost,
         };
       } else {
         room.lastRoundWinner = 'tie';
@@ -285,36 +431,33 @@ class RoomManager {
     if (!room) throw new Error('الغرفة غير موجودة');
     if (room.phase !== 'MYSTERY_SELECTION') throw new Error('ليس وقت اختيار الصناديق');
 
-    if (boxIndex < 0 || boxIndex > 3) {
-      throw new Error('رقم الصندوق غير صالح');
+    if (boxIndex < 0 || boxIndex > 2) {
+      throw new Error('يرجى اختيار أحد الصناديق الثلاثة (1 - 3)');
     }
 
     const currentPos = room.positionOrder[room.currentRoundIndex];
-    const clubs = room.currentRoundClubs || ['Real Madrid', 'FC Barcelona', 'Manchester City', 'Bayern Munich'];
+    const clubs = room.currentRoundClubs || ['Real Madrid', 'FC Barcelona', 'Manchester City'];
     const chosenClub = clubs[boxIndex % clubs.length];
 
     if (room.hostId === userId) {
       if (room.participants.host.currentBoxSelection === null) {
         room.participants.host.currentBoxSelection = boxIndex;
-        // Award player strictly matching current position
         const p1 = getRandomPlayerByClubAndPosition(chosenClub, currentPos);
         room.participants.host.squad.push(p1);
       }
     } else if (room.participants.guest?.id === userId) {
       if (room.participants.guest.currentBoxSelection === null) {
         room.participants.guest.currentBoxSelection = boxIndex;
-        // Award player strictly matching current position
         const p2 = getRandomPlayerByClubAndPosition(chosenClub, currentPos);
         room.participants.guest.squad.push(p2);
       }
     } else {
-      throw new Error('المستخدم ليس عضواً في هذه الغرفة');
+      throw new Error('المستخدم ليس عضوًا في هذه الغرفة');
     }
 
     const hostBox = room.participants.host.currentBoxSelection;
     const guestBox = room.participants.guest?.currentBoxSelection;
 
-    // When both have chosen, reveal is complete
     if (hostBox !== null && hostBox !== undefined && guestBox !== null && guestBox !== undefined) {
       room.phase = 'MYSTERY_REVEAL';
     }
@@ -333,7 +476,6 @@ class RoomManager {
       room.currentRoundIndex = nextIndex;
       this.prepareRound(room);
     } else {
-      // Challenge phase complete! Transition to Squad Comparison & Simulation
       room.phase = 'SQUAD_COMPARISON';
 
       if (room.gameId === 'stat_arena') {
@@ -355,6 +497,13 @@ class RoomManager {
   public startSimulation(code: string): OnlineRoomState {
     const room = this.getRoom(code);
     if (!room) throw new Error('الغرفة غير موجودة');
+    const expectedCount = room.totalRounds;
+    if (
+      room.participants.host.squad.length < expectedCount ||
+      (room.participants.guest?.squad.length || 0) < expectedCount
+    ) {
+      throw new Error('لا يمكن بدء المحاكاة قبل اكتمال التشكيلتين');
+    }
     room.phase = 'SIMULATION';
     room.updatedAt = Date.now();
     this.broadcast(room);
@@ -365,59 +514,60 @@ class RoomManager {
     const room = this.getRoom(code);
     if (!room) throw new Error('الغرفة غير موجودة');
 
+    if (
+      (room.phase === 'MATCH_FINISHED' || room.phase === 'COMPLETED') &&
+      room.simulationResult
+    ) {
+      return room;
+    }
+
     let winnerId: string | 'draw' = 'draw';
     if (hostGoals > guestGoals) winnerId = room.hostId;
-    else if (guestGoals > hostGoals && room.participants.guest) winnerId = room.participants.guest.id;
+    else if (guestGoals > hostGoals && room.participants.guest) {
+      winnerId = room.participants.guest.id;
+    }
+
+    const hostSquad = room.participants.host.squad || [];
+    const guestSquad = room.participants.guest?.squad || [];
+    const hostSquadOvr =
+      hostSquad.length > 0
+        ? Math.round(hostSquad.reduce((s, p) => s + (p.ovr || 85), 0) / hostSquad.length)
+        : 85;
+    const guestSquadOvr =
+      guestSquad.length > 0
+        ? Math.round(guestSquad.reduce((s, p) => s + (p.ovr || 85), 0) / guestSquad.length)
+        : 85;
+
+    const recorded = leagueAndStoreManager.recordRoomMatch({
+      roomCode: room.code,
+      gameId: room.gameId,
+      mode: room.mode,
+      hostId: room.hostId,
+      hostName: room.participants.host.name,
+      hostSquadOvr,
+      guestId: room.participants.guest?.id || 'guest',
+      guestName: room.participants.guest?.name || 'اللاعب 2',
+      guestSquadOvr,
+      hostGoals,
+      guestGoals,
+    });
 
     room.phase = 'MATCH_FINISHED';
-    room.simulationResult = { hostGoals, guestGoals, winnerId };
+    room.simulationResult = {
+      matchId: recorded.matchRecord.id,
+      rewardTransactionId: recorded.matchRecord.rewardTransactionId || `rtx_${room.code}`,
+      hostGoals,
+      guestGoals,
+      winnerId,
+      hostCoinsAwarded: recorded.hostCoinsAwarded,
+      guestCoinsAwarded: recorded.guestCoinsAwarded,
+      hostRpDelta: recorded.hostRpDelta,
+      guestRpDelta: recorded.guestRpDelta,
+    };
     room.updatedAt = Date.now();
-
-    // Authoritatively award official room points (Win: 3, Draw: 1, Loss: 0)
-    if (room.participants.guest) {
-      rankingManager.recordRoomMatch(
-        room.hostId,
-        room.participants.host.name,
-        undefined,
-        hostGoals,
-        room.participants.guest.id,
-        room.participants.guest.name,
-        undefined,
-        guestGoals
-      );
-
-      adminDb.addMatchLog(
-        room.code,
-        room.participants.host.name,
-        room.participants.guest.name,
-        `${hostGoals} - ${guestGoals}`,
-        winnerId === 'draw' ? 'تعادل' : (winnerId === room.hostId ? room.participants.host.name : room.participants.guest.name)
-      );
-    }
 
     this.broadcast(room);
     return room;
-  }
-
-  public handleDisconnect(code: string, userId: string): void {
-    const room = this.getRoom(code);
-    if (!room) return;
-
-    if (room.hostId === userId) {
-      room.participants.host.connected = false;
-    } else if (room.participants.guest?.id === userId) {
-      room.participants.guest.connected = false;
-    }
-
-    room.updatedAt = Date.now();
-    this.broadcast(room);
-
-    // Give 45 seconds reconnection grace period
-    const timerKey = `${code}_${userId}`;
-    const timer = setTimeout(() => {
-      this.leaveRoom(code, userId);
-    }, 45000);
-    this.disconnectTimers.set(timerKey, timer);
   }
 
   public leaveRoom(code: string, userId: string): void {
@@ -429,7 +579,7 @@ class RoomManager {
       this.broadcast({
         ...room,
         phase: 'WAITING',
-        updatedAt: Date.now()
+        updatedAt: Date.now(),
       });
     } else if (room.participants.guest?.id === userId) {
       delete room.participants.guest;

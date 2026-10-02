@@ -17,6 +17,8 @@ export const PlayerCard: React.FC<PlayerCardProps> = ({
   showStats = true,
   highlighted = false
 }) => {
+  const [imgError, setImgError] = useState(false);
+
   const tierStyles = {
     WEEKLY: {
       border: 'border-zinc-700/80 hover:border-amber-400/60',
@@ -44,6 +46,8 @@ export const PlayerCard: React.FC<PlayerCardProps> = ({
     lg: 'w-60 h-84 text-base'
   }[size];
 
+  const imgSrc = player.image || `/players/${player.id}.jpg`;
+
   return (
     <div
       onClick={onClick}
@@ -57,7 +61,11 @@ export const PlayerCard: React.FC<PlayerCardProps> = ({
       {/* Top Header: OVR + Position & Nationality */}
       <div className="relative z-10 flex items-start justify-between">
         <div className="flex flex-col items-center">
-          <span className={`font-chakra font-black tracking-tighter rounded-md px-1.5 py-0.5 text-center leading-none ${size === 'sm' ? 'text-sm' : size === 'md' ? 'text-lg' : 'text-2xl'} ${tierStyles.ovrBadge}`}>
+          <span
+            className={`font-chakra font-black tracking-tighter rounded-md px-1.5 py-0.5 text-center leading-none tabular-nums ${
+              size === 'sm' ? 'text-sm' : size === 'md' ? 'text-lg' : 'text-2xl'
+            } ${tierStyles.ovrBadge}`}
+          >
             {player.ovr}
           </span>
           <span className={`font-chakra font-bold text-zinc-300 mt-1 uppercase ${size === 'sm' ? 'text-[10px]' : 'text-xs'}`}>
@@ -69,19 +77,28 @@ export const PlayerCard: React.FC<PlayerCardProps> = ({
           <span className="text-base select-none leading-none" title={player.nationality}>
             {player.flag || '⚽'}
           </span>
-          <span className={`text-[10px] text-zinc-400 truncate max-w-[70px] font-tajawal`} title={player.club}>
+          <span className="text-[10px] text-zinc-400 truncate max-w-[75px] font-tajawal" title={player.club}>
             {player.club}
           </span>
         </div>
       </div>
 
-      {/* Player Portrait */}
-      <div className="relative z-10 flex-1 flex items-center justify-center my-1 overflow-hidden">
-        <img
-          src={player.image || `/players/${player.id}.jpg`}
-          alt={player.name}
-          className="w-full h-full object-cover object-top rounded-xl filter drop-shadow-[0_4px_6px_rgba(0,0,0,0.5)]"
-        />
+      {/* Player Portrait with Resilient Fallback */}
+      <div className="relative z-10 flex-1 flex items-center justify-center my-1 overflow-hidden rounded-xl bg-black/30">
+        {!imgError && imgSrc ? (
+          <img
+            src={imgSrc}
+            alt={player.name}
+            referrerPolicy="no-referrer"
+            onError={() => setImgError(true)}
+            className="w-full h-full object-cover object-top rounded-xl filter drop-shadow-[0_4px_6px_rgba(0,0,0,0.5)]"
+          />
+        ) : (
+          <div className="w-full h-full flex flex-col items-center justify-center bg-gradient-to-b from-amber-500/15 to-black/60 border border-amber-500/30 rounded-xl p-2 text-center">
+            <Shield className="w-10 h-10 text-amber-400 mb-1" />
+            <span className="font-chakra font-bold text-xs text-amber-300">{player.position}</span>
+          </div>
+        )}
       </div>
 
       {/* Player Name Banner */}
@@ -92,13 +109,13 @@ export const PlayerCard: React.FC<PlayerCardProps> = ({
         <div className="flex items-center justify-center gap-1 text-[10px] text-amber-400/90 font-mono">
           <span>{player.cardType}</span>
           <span>·</span>
-          <span>{player.season || '2024'}</span>
+          <span className="truncate max-w-[85px]">{player.league || player.season || '2025'}</span>
         </div>
       </div>
 
       {/* 6 Core Stats (PAC, SHO, PAS, DRI, DEF, PHY) */}
       {showStats && size !== 'sm' && (
-        <div className="relative z-10 grid grid-cols-6 gap-0.5 text-center mt-1.5 pt-1 border-t border-white/10 bg-black/30 rounded-lg py-1 font-chakra">
+        <div className="relative z-10 grid grid-cols-6 gap-0.5 text-center mt-1.5 pt-1 border-t border-white/10 bg-black/30 rounded-lg py-1 font-chakra tabular-nums">
           <div>
             <div className="text-[9px] text-zinc-400">PAC</div>
             <div className="text-xs font-bold text-zinc-200">{player.stats.pac}</div>

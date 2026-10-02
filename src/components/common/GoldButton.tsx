@@ -2,7 +2,7 @@ import React from 'react';
 import { sounds } from '../../services/audio';
 
 interface GoldButtonProps extends React.ButtonHTMLAttributes<HTMLButtonElement> {
-  variant?: 'gold' | 'dark' | 'outline' | 'danger';
+  variant?: 'gold' | 'dark' | 'outline' | 'danger' | 'secondary';
   size?: 'sm' | 'md' | 'lg';
   fullWidth?: boolean;
   children: React.ReactNode;
@@ -20,14 +20,8 @@ export const GoldButton: React.FC<GoldButtonProps> = ({
 }) => {
   const handleClick = (e: React.MouseEvent<HTMLButtonElement>) => {
     if (!disabled) {
-      sounds.playButtonClick();
+      sounds.playTap();
       onClick?.(e);
-    }
-  };
-
-  const handleMouseEnter = () => {
-    if (!disabled) {
-      sounds.playButtonHover();
     }
   };
 
@@ -40,6 +34,7 @@ export const GoldButton: React.FC<GoldButtonProps> = ({
   const variantClasses = {
     gold: 'btn-gold rounded-xl',
     dark: 'btn-dark rounded-xl',
+    secondary: 'btn-dark rounded-xl',
     outline: 'border border-amber-500/40 text-amber-300 hover:bg-amber-500/10 active:translate-y-1 rounded-xl transition-all',
     danger: 'bg-red-950/80 border border-red-700/50 text-red-200 hover:bg-red-900 active:translate-y-1 rounded-xl transition-all'
   }[variant];
@@ -49,7 +44,6 @@ export const GoldButton: React.FC<GoldButtonProps> = ({
       {...props}
       disabled={disabled}
       onClick={handleClick}
-      onMouseEnter={handleMouseEnter}
       className={`relative inline-flex items-center justify-center font-medium tracking-wide cursor-pointer select-none transition-transform duration-100 ${variantClasses} ${sizeClasses} ${fullWidth ? 'w-full' : ''} ${className}`}
     >
       <span className="relative z-10 flex items-center justify-center gap-2">

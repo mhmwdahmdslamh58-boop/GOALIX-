@@ -2,6 +2,8 @@ export type PositionType = 'GK' | 'DEF' | 'MID' | 'ATT';
 
 export type CardTier = 'WEEKLY' | 'ELITE' | 'ICON';
 
+export type PackRarityTier = 'Common' | 'Rare' | 'Epic' | 'Legendary';
+
 export interface PlayerStats {
   pac: number;
   sho: number;
@@ -28,7 +30,7 @@ export interface Player {
   flag?: string;
 }
 
-export type StatCategory = 
+export type StatCategory =
   | 'Goals'
   | 'Assists'
   | 'Appearances'
@@ -63,16 +65,53 @@ export interface StatQuestion {
 
 export type GameMode = 'quick_five' | 'full_eleven';
 
-export type GameId = 'stat_arena' | 'santra' | 'memory_xi';
+export type GameId = 'stat_arena' | 'santra' | 'memory_xi' | 'squad_match';
 
 export type FormationType = '4-3-3' | '4-4-2' | '4-2-3-1' | '3-5-2' | '5-3-2';
+
+export type SantraChestTier = 'Bronze' | 'Silver' | 'Gold' | 'Elite' | 'Legendary';
+
+export interface SantraChestItem {
+  id: string;
+  tier: SantraChestTier;
+  sourceAr: string;
+  createdAt: number;
+}
+
+export type PackTierId = 'BRONZE' | 'WEEKLY' | 'GOLD' | 'ELITE' | 'ICON';
+
+export interface OwnedPackItem {
+  id: string;
+  packTier: PackTierId;
+  nameAr: string;
+  rarity?: PackRarityTier;
+  createdAt: number;
+}
+
+export interface ActivityLogItem {
+  id: string;
+  type: 'match' | 'pack' | 'chest' | 'reward' | 'topup' | 'purchase';
+  titleAr: string;
+  subtitleAr: string;
+  coinsDelta: number;
+  rankPointsDelta: number;
+  timestamp: number;
+}
+
+export interface AppSettings {
+  soundEnabled: boolean;
+  musicEnabled: boolean;
+  effectsEnabled: boolean;
+  notificationsEnabled: boolean;
+  language: 'ar' | 'en';
+}
 
 export interface SquadSlot {
   index: number;
   position: PositionType;
   label: string;
-  x: number; // percentage on pitch (0-100)
-  y: number; // percentage on pitch (0-100)
+  x: number;
+  y: number;
   player: Player | null;
 }
 
@@ -84,73 +123,237 @@ export interface PastWinnerMedal {
   date: string;
 }
 
-export type StoreCategory = 
-  | 'coins'
-  | 'packs'
-  | 'chat_messages'
-  | 'chat_effects'
-  | 'profile_items'
-  | 'special_items'
-  | 'limited_items';
+// ==================== CHAT MESSAGES & STORE CATEGORIES ====================
 
-export type ItemRarity = 'common' | 'rare' | 'epic' | 'legendary' | 'mythic';
+export type QuickChatCategory =
+  | 'SALAM'
+  | 'FUN'
+  | 'TAUNT'
+  | 'CHALLENGE'
+  | 'LATE'
+  | 'LUCK'
+  | 'GOOD_PLAYER'
+  | 'BAD_PLAYER'
+  | 'CELEBRATION'
+  | 'CONFIDENCE'
+  | 'RESPECT'
+  | 'REACTION'
+  | 'WIN'
+  | 'LOSE'
+  | 'GOAL'
+  | 'START'
+  | 'SPECIAL';
 
-export interface StoreProduct {
+export interface QuickChatMessageItem {
   id: string;
-  name: string;
-  nameAr: string;
-  category: StoreCategory;
-  price: number;
-  rarity: ItemRarity;
-  description: string;
-  descriptionAr: string;
-  image: string;
-  icon?: string;
-  isFeatured?: boolean;
-  isLimited?: boolean;
-  isNew?: boolean;
-  isActive?: boolean;
-  purchasedCount?: number;
-  tier?: CardTier;
-  stock?: number;
+  textAr: string;
+  category: QuickChatCategory;
+  categoryLabelAr: string;
+  priceCoins: number;
+  rarity: PackRarityTier;
+  featured?: boolean;
+  enabled: boolean;
+  isStarterOwned?: boolean;
 }
 
-export interface PurchaseRecord {
+export type StoreSectionType =
+  | 'PACKS'
+  | 'CHAT'
+  | 'CHAT_EFFECTS'
+  | 'PROFILE_ITEMS'
+  | 'SPECIAL_ITEMS'
+  | 'LIMITED';
+
+export interface StoreProductItem {
+  id: string;
+  section: StoreSectionType;
+  nameAr: string;
+  descriptionAr: string;
+  priceCoins: number;
+  rarity: PackRarityTier;
+  packTier?: PackTierId;
+  chatMessageId?: string;
+  effectStyle?: string;
+  badgeTextAr?: string;
+  minOvr?: number;
+  featured: boolean;
+  limited: boolean;
+  enabled: boolean;
+  hidden: boolean;
+}
+
+export type PurchaseRequestStatus = 'PENDING' | 'APPROVED' | 'COMPLETED' | 'REJECTED';
+
+export interface StorePurchaseRequest {
   id: string;
   userId: string;
   accountId: string;
   username: string;
   productId: string;
-  productName: string;
-  category: StoreCategory;
-  price: number;
+  productNameAr: string;
+  productSection: StoreSectionType;
+  priceCoins: number;
+  status: PurchaseRequestStatus;
+  createdAt: number;
+  reviewedAt?: number;
+  reviewedBy?: string;
+}
+
+export interface CoinTransactionRecord {
+  id: string;
+  userId: string;
+  accountId: string;
+  username: string;
+  amount: number;
+  beforeBalance: number;
+  afterBalance: number;
+  reason: string;
   timestamp: number;
-  status: 'completed' | 'refunded';
+}
+
+export interface SecurityLogEntry {
+  id: string;
+  userId: string;
+  accountId?: string;
+  email?: string;
+  action: string;
+  status: 'ALLOWED' | 'DENIED_403' | 'DUPLICATE_BLOCKED' | 'INVALID_REQUEST';
+  details: string;
+  timestamp: number;
 }
 
 export interface UserProfile {
   id: string;
-  accountId: string; // Permanent Unique ID e.g. GX-849271
-  username: string;
+  accountId?: string; // Unique immutable ID e.g. GX-849271
   email?: string;
+  role?: 'OWNER' | 'PLAYER';
+  profileCompleted?: boolean;
+  username: string;
   avatar: string;
   coins: number;
-  bids: number; // Currency specifically for Store Packs
-  points?: number; // Rank Points for League Leaderboard
-  role?: 'admin' | 'player';
-  inventory?: string[];
-  purchaseHistory?: PurchaseRecord[];
+  bids: number;
+  rankPoints: number; // Multiplayer Rooms Only: WIN = +3, DRAW = +1, LOSS = 0
   matchesPlayed: number;
   matchesWon: number;
-  matchesDrawn?: number;
-  matchesLost?: number;
+  matchesDrawn: number;
+  matchesLost: number;
   statArenaWins: number;
   santraWins: number;
   memoryXiWins: number;
+  squadMatchWins?: number;
   bestRank?: number;
   pastMedals?: PastWinnerMedal[];
   unlockedReactions?: string[];
+  ownedChatIds?: string[];
+  ownedCosmetics?: string[];
+  claimedRewards?: string[];
+  ownedPacks?: OwnedPackItem[];
+  santraChests?: SantraChestItem[];
+  recentActivity?: ActivityLogItem[];
+  lastSquadTrialAt?: number; // Server-enforced 3-day cooldown for My Squad vs AI
+  settings?: AppSettings;
   createdAt: number;
+}
+
+export interface GoalixLeagueMatchRecord {
+  id: string;
+  rewardTransactionId?: string;
+  roomCode: string;
+  gameId: GameId;
+  mode: GameMode;
+  hostId: string;
+  hostAccountId?: string;
+  hostName: string;
+  hostSquadOvr: number;
+  guestId: string;
+  guestAccountId?: string;
+  guestName: string;
+  guestSquadOvr: number;
+  hostGoals: number;
+  guestGoals: number;
+  winnerId: string | 'draw';
+  timestamp: number;
+}
+
+export interface GoalixLeagueStandingRow {
+  playerId: string;
+  accountId: string;
+  playerName: string;
+  avatar?: string;
+  squadOvr: number;
+  played: number;
+  wins: number;
+  draws: number;
+  losses: number;
+  goalsFor: number;
+  goalsAgainst: number;
+  goalDiff: number;
+  points: number;
+  form: ('W' | 'D' | 'L')[];
+  lastPlayedAt: number;
+}
+
+export interface TopUpPackageItem {
+  id: string;
+  nameAr: string;
+  coinsAmount: number;
+  bonusCoins: number;
+  bonusPackTier?: PackTierId;
+  bonusChestTier?: SantraChestTier;
+  priceTextAr: string;
+  badgeAr?: string;
+  theme: 'bronze' | 'silver' | 'gold' | 'elite' | 'royal';
+}
+
+export interface TopUpTransactionRecord {
+  id: string;
+  targetPlayerId: string;
+  targetAccountId: string;
+  targetPlayerName: string;
+  operation: 'add' | 'set' | 'deduct';
+  coinsDelta: number;
+  previousBalance: number;
+  newBalance: number;
+  packageId?: string;
+  packageNameAr: string;
+  bonusPackTier?: PackTierId;
+  bonusChestTier?: SantraChestTier;
+  noteAr?: string;
+  timestamp: number;
+}
+
+export interface PendingGrantItem {
+  id: string;
+  operation: 'add' | 'set' | 'deduct';
+  coinsAmount: number;
+  packageNameAr: string;
+  bonusPackTier?: PackTierId;
+  bonusChestTier?: SantraChestTier;
+  noteAr?: string;
+  timestamp: number;
+}
+
+export interface SyncedPlayerAccount {
+  id: string;
+  accountId: string;
+  email?: string;
+  role?: 'OWNER' | 'PLAYER';
+  profileCompleted?: boolean;
+  username: string;
+  avatar?: string;
+  coins: number;
+  rankPoints: number;
+  squadOvr: number;
+  matchesPlayed: number;
+  matchesWon: number;
+  matchesDrawn: number;
+  matchesLost: number;
+  ownedCardsCount: number;
+  ownedPacks?: OwnedPackItem[];
+  ownedChatIds?: string[];
+  ownedCosmetics?: string[];
+  lastSquadTrialAt?: number;
+  updatedAt: number;
 }
 
 export interface MemoryXiGuess {
@@ -161,9 +364,9 @@ export interface MemoryXiGuess {
 }
 
 export interface MemoryXiRoundResult {
-  roundIndex: number; // 0, 1, 2, or 3+ for tie-break
+  roundIndex: number;
   isTieBreak: boolean;
-  formation: Player[]; // 11 unique players (1 GK, 4 DEF, 3 MID, 3 ATT)
+  formation: Player[];
   p1Guesses: MemoryXiGuess[];
   p2Guesses: MemoryXiGuess[];
   p1Score: number;
@@ -174,7 +377,7 @@ export interface PackDefinition {
   id: CardTier;
   name: string;
   price: number;
-  priceBids: number; // Price in Bids
+  priceBids: number;
   minOvr: number;
   maxOvr: number;
   description: string;
@@ -185,9 +388,21 @@ export interface PackDefinition {
 
 export type CpuDifficulty = 'Rookie' | 'Pro' | 'Elite' | 'Legend';
 
+export interface RoomChatMessageEvent {
+  id: string;
+  senderId: string;
+  senderName: string;
+  messageId: string;
+  textAr: string;
+  category: QuickChatCategory;
+  timestamp: number;
+}
+
 export interface RoomParticipant {
   id: string;
+  accountId?: string;
   name: string;
+  avatar?: string;
   ready: boolean;
   score: number;
   diffSum: number;
@@ -196,11 +411,14 @@ export interface RoomParticipant {
   memoryGuesses?: string[];
   memoryScore?: number;
   squad: Player[];
+  messagesSentCount: number; // Max 6 per match enforced Server-Side
+  lastMessageAt: number; // 15s cooldown enforced Server-Side
   connected: boolean;
 }
 
-export type RoomPhase = 
+export type RoomPhase =
   | 'WAITING'
+  | 'PLAYER_2_JOINED'
   | 'SELECTING_SETTINGS'
   | 'READY'
   | 'QUESTION_ACTIVE'
@@ -210,15 +428,25 @@ export type RoomPhase =
   | 'MEMORY_FORMATION_VIEW'
   | 'MEMORY_ANSWERING'
   | 'MEMORY_ROUND_RESULT'
+  | 'LINEUPS'
   | 'SQUAD_COMPARISON'
   | 'SIMULATION'
-  | 'MATCH_FINISHED';
+  | 'RESULT'
+  | 'MATCH_FINISHED'
+  | 'COMPLETED';
+
+export type RoomVisibilityType = 'PUBLIC' | 'PRIVATE';
+export type RoomTimerDuration = 15 | 30 | 45 | 60;
 
 export interface OnlineRoomState {
   code: string;
   hostId: string;
   gameId: GameId;
   mode: GameMode;
+  roomType: RoomVisibilityType;
+  timerSeconds: RoomTimerDuration;
+  chatEnabled: boolean;
+  roundDeadlineAt?: number; // Server-side timer deadline timestamp
   phase: RoomPhase;
   currentRoundIndex: number;
   totalRounds: number;
@@ -227,6 +455,7 @@ export interface OnlineRoomState {
     host: RoomParticipant;
     guest?: RoomParticipant;
   };
+  chatMessages: RoomChatMessageEvent[];
   currentQuestion?: StatQuestion;
   currentRoundClubs?: string[];
   memoryFormation?: Player[];
@@ -240,33 +469,39 @@ export interface OnlineRoomState {
   } | null;
   matchAdvantage?: {
     leaderId: string;
-    score: string; // e.g. "1-0"
+    score: string;
   };
   simulationResult?: {
+    matchId: string;
+    rewardTransactionId: string;
     hostGoals: number;
     guestGoals: number;
     winnerId: string | 'draw';
+    hostCoinsAwarded: number;
+    guestCoinsAwarded: number;
+    hostRpDelta: number;
+    guestRpDelta: number;
   };
   updatedAt: number;
 }
 
 export interface MatchSimEvent {
   minute: number;
-  type: 
-    | 'goal' 
-    | 'save' 
-    | 'shot' 
-    | 'tackle' 
-    | 'pass' 
-    | 'foul' 
-    | 'yellow_card' 
-    | 'red_card' 
-    | 'corner' 
-    | 'free_kick' 
-    | 'offside' 
-    | 'penalty' 
-    | 'var' 
-    | 'substitution' 
+  type:
+    | 'goal'
+    | 'save'
+    | 'shot'
+    | 'tackle'
+    | 'pass'
+    | 'foul'
+    | 'yellow_card'
+    | 'red_card'
+    | 'corner'
+    | 'free_kick'
+    | 'offside'
+    | 'penalty'
+    | 'var'
+    | 'substitution'
     | 'injury';
   team: 'p1' | 'p2';
   descriptionAr: string;
@@ -280,6 +515,10 @@ export interface MatchSimEvent {
 export interface MatchSimStats {
   possessionP1: number;
   possessionP2: number;
+  attacksP1?: number;
+  attacksP2?: number;
+  chancesP1?: number;
+  chancesP2?: number;
   shotsP1: number;
   shotsP2: number;
   shotsOnTargetP1: number;
@@ -290,4 +529,8 @@ export interface MatchSimStats {
   cornersP2: number;
   foulsP1: number;
   foulsP2: number;
+  yellowCardsP1?: number;
+  yellowCardsP2?: number;
+  redCardsP1?: number;
+  redCardsP2?: number;
 }

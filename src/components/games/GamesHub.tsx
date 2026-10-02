@@ -2,193 +2,378 @@ import React, { useState } from 'react';
 import { GameId } from '../../types/game';
 import { GoldButton } from '../common/GoldButton';
 import { sounds } from '../../services/audio';
-import { Gamepad2, Play, Info, Flame, Sparkles, HelpCircle, Trophy } from 'lucide-react';
+import {
+  Play,
+  Sparkles,
+  Trophy,
+  Users,
+  Brain,
+  Globe,
+  Swords,
+  Info,
+  CheckCircle2,
+  X,
+  Coins,
+  Award,
+  Package,
+  Dices,
+} from 'lucide-react';
+import statArenaCover from '../../assets/images/stat_arena_cover_1790797310047.jpg';
+import santraCover from '../../assets/images/santra_mystery_cover_1790797320678.jpg';
+import memoryXICover from '../../assets/images/memory_xi_cover_1790801558164.jpg';
+import heroBanner from '../../assets/images/goalix_hero_banner_1790797297425.jpg';
 
 interface GamesHubProps {
-  onSelectGame: (gameId: GameId) => void;
-  onOpenOnlineRooms: () => void;
+  onSelectGame: (game: GameId) => void;
+  onOpenRooms?: (gameId?: GameId) => void;
 }
 
-export const GamesHub: React.FC<GamesHubProps> = ({ onSelectGame, onOpenOnlineRooms }) => {
-  const [selectedIntroGame, setSelectedIntroGame] = useState<GameId | null>(null);
+interface GameCatalogItem {
+  id: GameId;
+  code: string;
+  titleAr: string;
+  subtitleAr: string;
+  descriptionAr: string;
+  howToPlaySummaryAr: string;
+  coverImg: string;
+  supportsRooms: boolean;
+  modeBadge: string;
+  roundsInfo: string;
+  rewardCoins: string;
+  rewardChest: string;
+  features: string[];
+  rules: string[];
+}
 
-  const gamesList = [
-    {
-      id: 'stat_arena' as GameId,
-      name: 'STAT ARENA',
-      titleAr: 'ستات أرينا · صراع الأرقام',
-      tagline: 'تحدي التوقعات الإحصائية الكروية',
-      descriptionAr: 'اختبر معلوماتك الكروية التنافسية! توقع أرقام وإحصائيات أساطير ونجوم كرة القدم الحقيقية. صاحب التوقع الأدق يفوز بالجولة، بينما يحصل الخاسر على لاعب عشوائي لتعزيز تشكيلته، ثم تخوضان محاكاة مباراة تكتيكية بأفضلية 1-0 للمتصدر!',
-      image: '/src/assets/images/stat_arena_cover_1790797310047.jpg',
-      badge: 'إحصائيات وتحدي',
-      modes: ['Quick Five (5)', 'Full Eleven (11)', 'أوفلاين ضد الكمبيوتر', 'صديق على نفس الجهاز', 'أونلاين غرف مباشرة']
-    },
-    {
-      id: 'santra' as GameId,
-      name: 'SANTRA',
-      titleAr: 'سانترا · درافت الصناديق',
-      tagline: 'تحدي الصناديق الغامضة وتشكيل الفريق',
-      descriptionAr: 'في كل جولة، تظهر 4 صناديق غامضة متطابقة تماماً لا تحمل أي شعار أو تلميح. يختر كل لاعب صندوقه ليكتشف النادي المختبئ بداخله، ويحصل على لاعب عشوائي في المركز التلقائي للجولة لبناء تشكيلة غير متوقعة قبل خوض محاكاة المباراة!',
-      image: '/src/assets/images/santra_mystery_cover_1790797320678.jpg',
-      badge: 'درافت غامض',
-      modes: ['Quick Five (5)', 'Full Eleven (11)', 'الكمبيوتر الذكي', 'صديق على نفس الجهاز', 'أونلاين خادم موثوق']
-    },
-    {
-      id: 'memory_xi' as GameId,
-      name: 'MEMORY XI',
-      titleAr: 'ميموري XI · ذاكرة التشكيلة',
-      tagline: 'تحدي حفظ وتذكر تشكيلة الـ11 لاعباً',
-      descriptionAr: 'كل مباراة 3 جولات! في كل جولة تظهر تشكيلة من 11 لاعباً حقيقياً لمدة 5 ثوانٍ فقط، ثم تختفي تماماً. اكتب أسماء اللاعبين الذين تتذكرهم بنفسك بدقة، واكسب النقاط للتغلب على منافسك في شوط الحسم أو Tie Break!',
-      image: '/src/assets/images/memory_xi_cover_1790801558164.jpg',
-      badge: 'ذاكرة وتحدي سرعة',
-      modes: ['3 جولات حاسمة', 'نظام كسر التعادل Tie Break', 'ذكاء اصطناعي (Rookie / Pro / Elite / Legend)', 'صديق على نفس الجهاز', 'غرف أونلاين مباشرة']
-    }
-  ];
+const GAMES_CATALOG: GameCatalogItem[] = [
+  {
+    id: 'santra',
+    code: 'SANTRA 3D',
+    titleAr: 'سانترا — اللوح التكتيكي وصناديق 3D',
+    subtitleAr: 'نرد تكتيكي · لوح 12 خانة · ألغاز · صناديق سانترا 3D',
+    descriptionAr:
+      'اللعبة التكتيكية المتكاملة! ارمِ نرد سانترا للتحرك على اللوح التكتيكي، حل ألغاز اللاعبين، وافتح صناديق سانترا ثلاثية الأبعاد لبناء تشكيلتك وخوض المحاكاة.',
+    howToPlaySummaryAr:
+      'ارمِ النرد التكتيكي ← خمن اللاعب بأقل تلميحات ← افتح أحد الصناديق الـ3 ← خض محاكاة الـ90 دقيقة.',
+    coverImg: santraCover,
+    supportsRooms: true,
+    modeBadge: 'فردي ضد AI / غرف أونلاين (Player 1 VS Player 2)',
+    roundsInfo: '5 أو 11 جولة + محاكاة',
+    rewardCoins: '+25 كوينز بالغرف (+5 فردي)',
+    rewardChest: 'صندوق سانترا 3D',
+    features: [
+      'لوح سانترا التكتيكي الفعلي (12 خانة تفاعلية)',
+      'نرد تكتيكي يمنح كوينز وترقيات OVR وبطاقات مساعدة',
+      'صناديق 3D معدنية بالأسود والذهبي قابلة للفتح الفعلي',
+      'محاكاة تكتيكية 90 دقيقة في نهاية بناء التشكيلة',
+    ],
+    rules: [
+      'في بداية دورك ارمِ نرد سانترا للتقدم على اللوح وكسب ميزة الخانة.',
+      'اقرأ التلميحات وخمّن اسم اللاعب بأقل عدد من التلميحات لكسب نقاط أعلى.',
+      'اختر أحد صناديق سانترا 3D الثلاثة لضم لاعب في المركز المطلوب.',
+      'بعد اكتمال التشكيلة، تنطلق محاكاة المباراة لتحديد البطل.',
+    ],
+  },
+  {
+    id: 'stat_arena',
+    code: 'STAT ARENA',
+    titleAr: 'ساحة الإحصائيات التنافسية',
+    subtitleAr: 'تحدي الأرقام القياسية · خطف نجوم المراكز · محاكاة',
+    descriptionAr:
+      'اختبر معرفتك الكروية بلغة الأرقام! صاحب التخمين الأقرب للإحصائية الحقيقية يخطف بطاقة اللاعب الأعلى تقييمًا في المركز المستهدف قبل انطلاق المحاكاة.',
+    howToPlaySummaryAr:
+      'اقرأ السؤال الإحصائي ← أدخل الرقم الأقرب للصواب قبل انتهاء المؤقت ← اخطف لاعب المركز ← حسم المحاكاة.',
+    coverImg: statArenaCover,
+    supportsRooms: true,
+    modeBadge: 'فردي ضد AI / غرف أونلاين (Player 1 VS Player 2)',
+    roundsInfo: '5 أو 11 جولة + مؤقت',
+    rewardCoins: '+25 كوينز بالغرف (+5 فردي)',
+    rewardChest: 'صندوق سانترا 3D',
+    features: [
+      'طور فردي للتدريب وطور غرف تنافسي مباشر بين لاعبين',
+      'مؤقت تنازلي تفاعلي لكل سؤال إحصائي',
+      'منح بطاقات حقيقية مطابقة للمركز المطلوب 100%',
+      'محاكاة كاملة للمباراة في نهاية التحدي',
+    ],
+    rules: [
+      'يظهر سؤال رقمي عن تاريخ كرة القدم والدوريات الكبرى.',
+      'أدخل الرقم الأقرب للإجابة الصحيحة قبل انتهاء المؤقت.',
+      'الأقرب للإجابة الصحيحة يحصل على لاعب نخبة في المركز المستهدف.',
+      'الفائز في غرف الأونلاين يحصد +3 نقاط تصنيف (RP) في دوري جولكس.',
+    ],
+  },
+  {
+    id: 'memory_xi',
+    code: 'MEMORY XI',
+    titleAr: 'ذاكرة التشكيلة الفوتوغرافية',
+    subtitleAr: '30 ثانية حفظ · 60 ثانية استرجاع · 3 جولات حاسمة',
+    descriptionAr:
+      'تحدي الذاكرة الكروية للأندية الأوروبية والتاريخية! احفظ مواقع وأسماء 11 لاعبًا على الملعب خلال 30 ثانية ثم استرجعهم بدقة.',
+    howToPlaySummaryAr:
+      'احفظ مواقع 11 لاعبًا خلال 30 ثانية ← استرجع أسماء اللاعبين في مراكزهم خلال 60 ثانية ← اجمع أعلى نقاط في 3 جولات.',
+    coverImg: memoryXICover,
+    supportsRooms: false,
+    modeBadge: 'تحدي فردي أو محلي',
+    roundsInfo: '3 جولات + شوط كسر تعادل',
+    rewardCoins: '+5 كوينز (طور فردي)',
+    rewardChest: 'صندوق سانترا 3D',
+    features: [
+      'أندية حقيقية وتشكيلات تاريخية وحديثة متجددة',
+      'مؤقت حفظ 30 ثانية ومؤقت إجابة 60 ثانية',
+      'دعم الكتابة بالعربية أو الإنجليزية مع مصحح ذكي للأسماء',
+      'وسائل مساعدة تكتيكية (كشف مركز / كشف حرف أول)',
+    ],
+    rules: [
+      'ركز جيدًا في التشكيلة المعروضة على الملعب لمدة 30 ثانية.',
+      'عند اختفاء الأسماء، اكتب أسماء اللاعبين في مراكزهم الصحيحة.',
+      'تتكون المباراة من 3 جولات، وفي حال التعادل يتم اللجوء لجولة Tie-Break.',
+    ],
+  },
+  {
+    id: 'squad_match',
+    code: 'MY SQUAD TRIAL',
+    titleAr: 'اختبار تشكيلتي التكتيكي (90 دقيقة)',
+    subtitleAr: 'العب بتشكيلتك الأساسية · تكتيك مباشر · إحصائيات كاملة',
+    descriptionAr:
+      'خض مباراة كاملة بتشكيلتك الأساسية التي بنيتها ضد أندية النخبة! غيّر الخطة والتكتيك المباشر أثناء المباراة وتابع الاستحواذ والهجمات والأهداف.',
+    howToPlaySummaryAr:
+      'اختر خطتك التكتيكية ← حدد النادي المنافس ← أدر التكتيك والسرعة خلال 90 دقيقة على رادار الملعب.',
+    coverImg: heroBanner,
+    supportsRooms: false,
+    modeBadge: 'اختبار التشكيلة ضد AI (مكافأة كل 3 أيام)',
+    roundsInfo: '90 دقيقة تفاعلية (1x / 2x / 4x)',
+    rewardCoins: '+20 كوينز (تجربة التشكيلة)',
+    rewardChest: 'صندوق سانترا 3D',
+    features: [
+      'محرك محاكاة يعتمد فعليًا على تقييمات لاعبيك، الخطة، والتناغم',
+      'تغيير التوجيه التكتيكي أثناء سير المباراة (هجومي / متوازن / دفاعي)',
+      'إحصائيات شاملة: الاستحواذ، الهجمات، الفرص، التسديدات، والبطاقات',
+      'تتويج رجل المباراة (MVP)',
+    ],
+    rules: [
+      'اختر النادي المنافس ومستوى الصعوبة.',
+      'حدد خطة فريقك (4-3-3، 4-4-2، 4-2-3-1، 3-5-2، 5-3-2) والتكتيك.',
+      'تابع مجريات اللقاء على رادار الملعب المباشر وتحكم بالسرعة أو التكتيك.',
+    ],
+  },
+];
+
+export const GamesHub: React.FC<GamesHubProps> = ({ onSelectGame, onOpenRooms }) => {
+  const [detailsGame, setDetailsGame] = useState<GameCatalogItem | null>(null);
 
   return (
-    <div className="pb-24 pt-2 px-4 max-w-md mx-auto space-y-4 select-none">
-      {/* Hub Header */}
-      <div className="bg-zinc-900/90 rounded-2xl p-4 border border-zinc-800 shadow-xl space-y-2">
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-2">
-            <Gamepad2 className="w-5 h-5 text-amber-400" />
-            <h3 className="font-chakra font-black text-lg text-zinc-100">
-              GOALIX GAMES
-            </h3>
-          </div>
-
-          <span className="text-[10px] text-amber-400 font-chakra font-bold bg-amber-500/10 px-2.5 py-0.5 rounded-full border border-amber-500/30">
-            3 ألعاب متاحة
-          </span>
-        </div>
-
-        <p className="text-xs text-zinc-400 font-tajawal leading-relaxed">
-          ألعاب تنافسية مصممة خصيصاً لعشاق كرة القدم. العب ضد الكمبيوتر، أو تحدّ صديقاً على نفس الجهاز، أو افتح غرفة أونلاين وتنافس عبر أجهزة مختلفة.
-        </p>
-      </div>
-
-      {/* Online Rooms Banner */}
-      <div className="bg-gradient-to-r from-amber-950/60 via-zinc-900 to-black rounded-2xl p-4 border border-amber-500/40 flex items-center justify-between">
+    <div className="max-w-5xl mx-auto px-4 py-6 pb-28 space-y-6 animate-fade-in">
+      {/* Header */}
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
         <div>
-          <span className="text-[10px] font-chakra font-bold text-amber-400 uppercase tracking-widest block">
-            ONLINE MULTIPLAYER
-          </span>
-          <h4 className="text-sm font-bold font-tajawal text-zinc-100 mt-0.5">
-            غرف اللعب عبر الإنترنت
-          </h4>
-          <p className="text-[11px] text-zinc-400 font-tajawal">أنشئ غرفة أو انضم برمز لمنافسة أصدقائك</p>
+          <div className="inline-flex items-center gap-1.5 text-amber-400 text-xs font-black tracking-wider uppercase mb-1">
+            <Sparkles className="w-3.5 h-3.5" />
+            <span>GAMES • ساحة ألعاب GOALIX ثلاثية الأبعاد</span>
+          </div>
+          <h2 className="text-2xl sm:text-3xl font-black text-white">بطاقات الألعاب الرسمية</h2>
+          <p className="text-zinc-400 text-xs sm:text-sm">
+            اختر اللعبة للعب الفردي أو ادخل غرف المنافسة المباشرة (Player 1 VS Player 2) لحصد نقاط دوري جولكس
+          </p>
         </div>
-
-        <GoldButton onClick={onOpenOnlineRooms} size="sm">
-          دخول الغرف
-        </GoldButton>
       </div>
 
-      {/* Games List */}
-      <div className="space-y-4">
-        {gamesList.map(game => (
+      {/* 3D Game Cards Grid */}
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+        {GAMES_CATALOG.map((game) => (
           <div
             key={game.id}
-            className="rounded-2xl border border-zinc-800 hover:border-amber-500/40 bg-zinc-900/90 overflow-hidden shadow-xl transition-all space-y-3"
+            className="group relative rounded-3xl overflow-hidden bg-gradient-to-b from-zinc-900 via-zinc-950 to-black border-2 border-amber-500/35 hover:border-amber-400 transition-all duration-300 shadow-[0_12px_0_rgb(24,24,27),0_25px_55px_rgba(0,0,0,0.9)] hover:-translate-y-1 active:translate-y-0.5 flex flex-col"
           >
-            {/* Artwork Banner */}
-            <div className="relative aspect-[16/9] w-full overflow-hidden">
+            {/* Ambient 3D Top Glow */}
+            <div className="pointer-events-none absolute -top-20 left-1/2 -translate-x-1/2 w-56 h-32 rounded-full bg-amber-500/15 blur-2xl opacity-0 group-hover:opacity-100 transition-opacity" />
+
+            {/* Cover Image */}
+            <div className="relative h-48 overflow-hidden">
               <img
-                src={game.image}
-                alt={game.name}
-                className="w-full h-full object-cover transition-transform duration-300 hover:scale-105"
+                src={game.coverImg}
+                alt={game.titleAr}
+                className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-700"
               />
-              <div className="absolute inset-0 bg-gradient-to-t from-zinc-950 via-zinc-950/40 to-transparent flex flex-col justify-end p-4">
-                <span className="text-[10px] font-chakra font-bold text-amber-400 uppercase tracking-widest">
-                  {game.badge}
-                </span>
-                <h4 className="font-chakra font-black text-xl text-white">
-                  {game.name}
-                </h4>
-                <p className="text-xs font-tajawal text-zinc-300">{game.titleAr}</p>
+              <div className="absolute inset-0 bg-gradient-to-t from-zinc-950 via-zinc-950/50 to-transparent" />
+
+              <div className="absolute top-3 right-3 px-3 py-1 rounded-xl bg-black/85 backdrop-blur-md border border-amber-500/40 text-amber-300 text-xs font-black flex items-center gap-1.5">
+                {game.id === 'santra' && <Dices className="w-3.5 h-3.5" />}
+                {game.id === 'stat_arena' && <Trophy className="w-3.5 h-3.5" />}
+                {game.id === 'memory_xi' && <Brain className="w-3.5 h-3.5" />}
+                {game.id === 'squad_match' && <Swords className="w-3.5 h-3.5" />}
+                <span>{game.code}</span>
+              </div>
+
+              <div className="absolute bottom-3 right-4 left-4">
+                <h3 className="text-xl font-black text-white drop-shadow">{game.titleAr}</h3>
+                <p className="text-[11px] text-amber-300 font-bold mt-0.5">{game.subtitleAr}</p>
               </div>
             </div>
 
-            {/* Content & Actions */}
-            <div className="p-4 pt-0 space-y-3">
-              <p className="text-xs text-zinc-400 font-tajawal leading-relaxed">
-                {game.tagline}
-              </p>
+            {/* Body: Description + How To Play + Actions */}
+            <div className="p-5 flex-1 flex flex-col justify-between space-y-4">
+              <div className="space-y-3">
+                <p className="text-xs text-zinc-300 leading-relaxed">{game.descriptionAr}</p>
 
-              <div className="flex gap-2">
-                <GoldButton
-                  onClick={() => onSelectGame(game.id)}
-                  fullWidth
-                  size="md"
-                >
-                  <Play className="w-4 h-4 fill-black" />
-                  العب الآن
-                </GoldButton>
+                {/* How to play concise card */}
+                <div className="bg-zinc-950/90 border border-zinc-800/90 rounded-2xl p-3 space-y-1">
+                  <div className="text-[10px] font-black text-amber-400 uppercase">
+                    طريقة اللعب (HOW TO PLAY):
+                  </div>
+                  <p className="text-[11px] text-zinc-300 font-bold leading-relaxed">
+                    {game.howToPlaySummaryAr}
+                  </p>
+                </div>
 
-                <button
-                  onClick={() => {
-                    sounds.playTap();
-                    setSelectedIntroGame(game.id);
-                  }}
-                  className="px-3 py-2 rounded-xl bg-zinc-800 border border-zinc-700 text-xs font-tajawal text-zinc-300 hover:text-white"
-                  title="دليل وقواعد اللعبة"
-                >
-                  <Info className="w-4 h-4" />
-                </button>
+                {/* Unboxed Clean Metadata Row */}
+                <div className="flex flex-wrap items-center gap-2 text-[11px] text-zinc-400 pt-1">
+                  <span className="text-zinc-200 font-bold">{game.roundsInfo}</span>
+                  <span aria-hidden="true">·</span>
+                  <span className="text-amber-400 font-bold">{game.rewardCoins}</span>
+                  <span aria-hidden="true">·</span>
+                  <span className="text-emerald-400 font-bold">
+                    {game.supportsRooms ? 'يدعم غرف الأونلاين (+3 RP)' : 'طور فردي'}
+                  </span>
+                </div>
+              </div>
+
+              {/* Action Buttons: Play + Rooms (if multiplayer) + Details */}
+              <div className="space-y-2 pt-1">
+                <div className="flex items-center gap-2.5">
+                  <GoldButton
+                    fullWidth
+                    onClick={() => {
+                      sounds.playTap();
+                      onSelectGame(game.id);
+                    }}
+                  >
+                    <span className="flex items-center justify-center gap-2">
+                      <Play className="w-4 h-4 fill-current" />
+                      Play • العب الآن
+                    </span>
+                  </GoldButton>
+
+                  {game.supportsRooms && onOpenRooms && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        sounds.playTap();
+                        onOpenRooms(game.id);
+                      }}
+                      className="px-4 py-3 rounded-xl bg-gradient-to-b from-zinc-800 to-zinc-900 hover:from-zinc-700 hover:to-zinc-800 border-2 border-amber-500/50 text-amber-300 font-black text-xs flex items-center gap-1.5 shrink-0 shadow-[0_4px_0_rgb(9,9,11)] active:translate-y-0.5 transition-all cursor-pointer"
+                    >
+                      <Globe className="w-4 h-4 text-amber-400" />
+                      <span>Rooms • الغرف</span>
+                    </button>
+                  )}
+
+                  <button
+                    type="button"
+                    onClick={() => {
+                      sounds.playTap();
+                      setDetailsGame(game);
+                    }}
+                    className="px-3 py-3 rounded-xl bg-zinc-900 hover:bg-zinc-800 border border-zinc-700 text-zinc-300 hover:text-amber-300 font-black text-xs flex items-center gap-1 shrink-0 shadow-[0_4px_0_rgb(9,9,11)] active:translate-y-0.5 transition-all cursor-pointer"
+                    title="تفاصيل وقوانين اللعبة"
+                  >
+                    <Info className="w-4 h-4 text-amber-400" />
+                  </button>
+                </div>
               </div>
             </div>
           </div>
         ))}
       </div>
 
-      {/* Game Intro Modal */}
-      {selectedIntroGame && (
-        <div className="fixed inset-0 z-50 bg-black/90 backdrop-blur-md flex items-center justify-center p-4 select-none">
-          {(() => {
-            const game = gamesList.find(g => g.id === selectedIntroGame)!;
-            return (
-              <div className="max-w-sm w-full bg-[#111317] border border-amber-500/40 rounded-2xl p-5 shadow-2xl space-y-4">
-                <div className="flex items-center justify-between border-b border-zinc-800 pb-2">
-                  <h3 className="font-chakra font-black text-base text-amber-400">
-                    {game.name}
-                  </h3>
-                  <button
-                    onClick={() => setSelectedIntroGame(null)}
-                    className="text-xs text-zinc-400 hover:text-white font-tajawal"
-                  >
-                    إغلاق
-                  </button>
-                </div>
-
-                <div className="space-y-2 text-right">
-                  <h4 className="text-sm font-bold text-white font-tajawal">{game.titleAr}</h4>
-                  <p className="text-xs text-zinc-300 font-tajawal leading-relaxed">
-                    {game.descriptionAr}
-                  </p>
-                </div>
-
-                <div className="bg-black/50 p-3 rounded-xl border border-zinc-800 space-y-1 text-right">
-                  <span className="text-[11px] font-bold text-amber-400 font-tajawal block">الأنماط المدعومة:</span>
-                  <ul className="text-xs text-zinc-400 font-tajawal space-y-0.5">
-                    {game.modes.map((m, idx) => (
-                      <li key={idx}>· {m}</li>
-                    ))}
-                  </ul>
-                </div>
-
-                <GoldButton
-                  onClick={() => {
-                    onSelectGame(game.id);
-                    setSelectedIntroGame(null);
-                  }}
-                  fullWidth
-                  size="md"
-                >
-                  بدء اللعب مباشرة
-                </GoldButton>
+      {/* GAME DETAILS MODAL */}
+      {detailsGame && (
+        <div className="fixed inset-0 z-50 bg-black/85 backdrop-blur-xl flex items-center justify-center p-4 animate-fade-in">
+          <div className="relative w-full max-w-lg bg-zinc-900 border-2 border-amber-500/40 rounded-3xl overflow-hidden shadow-[0_25px_70px_rgba(0,0,0,0.95)] max-h-[90vh] overflow-y-auto">
+            <div className="relative h-44">
+              <img
+                src={detailsGame.coverImg}
+                alt={detailsGame.titleAr}
+                className="w-full h-full object-cover"
+              />
+              <div className="absolute inset-0 bg-gradient-to-t from-zinc-900 via-zinc-900/50 to-transparent" />
+              <button
+                onClick={() => setDetailsGame(null)}
+                className="absolute top-4 left-4 w-9 h-9 rounded-full bg-black/70 border border-zinc-700 flex items-center justify-center text-zinc-300 hover:text-white"
+              >
+                <X className="w-5 h-5" />
+              </button>
+              <div className="absolute bottom-3 right-5 left-5">
+                <div className="text-amber-400 font-black text-xs">{detailsGame.code}</div>
+                <h3 className="text-xl font-black text-white mt-0.5">{detailsGame.titleAr}</h3>
               </div>
-            );
-          })()}
+            </div>
+
+            <div className="p-6 space-y-5">
+              <p className="text-xs text-zinc-300 leading-relaxed">{detailsGame.descriptionAr}</p>
+
+              {/* Key Features */}
+              <div className="space-y-2">
+                <h4 className="text-xs font-black text-amber-400 uppercase">مميزات نظام اللعب:</h4>
+                <div className="space-y-1.5">
+                  {detailsGame.features.map((f, i) => (
+                    <div
+                      key={i}
+                      className="flex items-center gap-2 text-xs text-zinc-200 bg-zinc-950/80 px-3 py-2 rounded-xl border border-zinc-800"
+                    >
+                      <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />
+                      <span>{f}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              {/* Rules */}
+              <div className="space-y-2">
+                <h4 className="text-xs font-black text-amber-400 uppercase">طريقة وقواعد اللعب:</h4>
+                <div className="space-y-1.5">
+                  {detailsGame.rules.map((r, i) => (
+                    <div key={i} className="flex items-start gap-2.5 text-xs text-zinc-300">
+                      <span className="w-5 h-5 rounded-full bg-amber-500/20 text-amber-300 font-black text-[10px] flex items-center justify-center shrink-0 mt-0.5">
+                        {i + 1}
+                      </span>
+                      <span>{r}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              <div className="flex gap-2.5 pt-2">
+                <GoldButton
+                  fullWidth
+                  size="lg"
+                  onClick={() => {
+                    const id = detailsGame.id;
+                    setDetailsGame(null);
+                    onSelectGame(id);
+                  }}
+                >
+                  <span className="flex items-center justify-center gap-2">
+                    <Play className="w-4 h-4 fill-current" />
+                    العب الآن (PLAY)
+                  </span>
+                </GoldButton>
+
+                {detailsGame.supportsRooms && onOpenRooms && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const id = detailsGame.id;
+                      setDetailsGame(null);
+                      onOpenRooms(id);
+                    }}
+                    className="px-4 py-3 rounded-xl bg-zinc-800 hover:bg-zinc-700 border border-amber-500/40 text-amber-300 font-black text-xs shrink-0"
+                  >
+                    غرف الأونلاين
+                  </button>
+                )}
+              </div>
+            </div>
+          </div>
         </div>
       )}
     </div>

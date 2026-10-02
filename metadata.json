@@ -2,5 +2,7 @@
   "name": "Remix Remix GOALIX",
   "description": "منصة ألعاب كرة القدم التنافسية المتكاملة - STAT ARENA، SANTRA، غرف الأونلاين ومحاكاة المباريات التكتيكية",
   "requestFramePermissions": [],
-  "majorCapabilities": []
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
 }

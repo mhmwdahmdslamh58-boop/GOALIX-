@@ -72,14 +72,64 @@
   border: 1px solid rgba(212, 175, 55, 0.2);
 }
 
-/* Card shimmer */
+/* Ornate Pack Shimmer & Rarity Glow Keyframes */
 @keyframes shimmer {
-  0% { transform: translateX(-100%); }
-  100% { transform: translateX(100%); }
+  0% { transform: translateX(-120%) skewX(-18deg); }
+  100% { transform: translateX(220%) skewX(-18deg); }
 }
 
 .animate-shimmer {
-  animation: shimmer 2.5s infinite;
+  animation: shimmer 2.8s cubic-bezier(0.4, 0, 0.2, 1) infinite;
+}
+
+@keyframes ornateHaloSpin {
+  0% { transform: rotate(0deg); }
+  100% { transform: rotate(360deg); }
+}
+
+.animate-halo-spin {
+  animation: ornateHaloSpin 18s linear infinite;
+}
+
+@keyframes packGlowBronze {
+  0%, 100% { box-shadow: 0 0 22px rgba(217, 119, 6, 0.3), inset 0 0 16px rgba(217, 119, 6, 0.18); }
+  50% { box-shadow: 0 0 36px rgba(245, 158, 11, 0.55), inset 0 0 26px rgba(245, 158, 11, 0.28); }
+}
+
+@keyframes packGlowSilver {
+  0%, 100% { box-shadow: 0 0 25px rgba(148, 163, 184, 0.35), inset 0 0 18px rgba(226, 232, 240, 0.2); }
+  50% { box-shadow: 0 0 42px rgba(56, 189, 248, 0.6), inset 0 0 28px rgba(226, 232, 240, 0.35); }
+}
+
+@keyframes packGlowGold {
+  0%, 100% { box-shadow: 0 0 30px rgba(250, 204, 21, 0.4), inset 0 0 20px rgba(250, 204, 21, 0.22); }
+  50% { box-shadow: 0 0 52px rgba(250, 204, 21, 0.75), inset 0 0 32px rgba(254, 240, 138, 0.4); }
+}
+
+@keyframes packGlowElite {
+  0%, 100% { box-shadow: 0 0 34px rgba(244, 63, 94, 0.45), inset 0 0 22px rgba(244, 63, 94, 0.25); }
+  50% { box-shadow: 0 0 58px rgba(251, 113, 133, 0.8), inset 0 0 34px rgba(251, 191, 36, 0.4); }
+}
+
+@keyframes packGlowIcon {
+  0%, 100% { box-shadow: 0 0 40px rgba(251, 191, 36, 0.55), 0 0 15px rgba(255, 255, 255, 0.35), inset 0 0 26px rgba(254, 240, 138, 0.35); }
+  50% { box-shadow: 0 0 72px rgba(251, 191, 36, 0.95), 0 0 28px rgba(255, 255, 255, 0.65), inset 0 0 42px rgba(254, 240, 138, 0.55); }
+}
+
+.pack-glow-BRONZE { animation: packGlowBronze 3.2s ease-in-out infinite; }
+.pack-glow-WEEKLY { animation: packGlowSilver 3s ease-in-out infinite; }
+.pack-glow-GOLD { animation: packGlowGold 2.6s ease-in-out infinite; }
+.pack-glow-ELITE { animation: packGlowElite 2.3s ease-in-out infinite; }
+.pack-glow-ICON { animation: packGlowIcon 2s ease-in-out infinite; }
+
+@keyframes packOpenedBurst {
+  0% { transform: scale(0.85); opacity: 0.3; }
+  50% { transform: scale(1.12); opacity: 1; }
+  100% { transform: scale(1); opacity: 1; }
+}
+
+.animate-pack-opened {
+  animation: packOpenedBurst 0.65s cubic-bezier(0.16, 1, 0.3, 1) forwards;
 }
 
 /* Safe scrollbars */

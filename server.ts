@@ -1,35 +1,313 @@
 import express, { Request, Response } from 'express';
+import { createServer as createViteServer } from 'vite';
 import path from 'path';
-import fs from 'fs';
 import { roomManager } from './server/roomManager';
-import { rankingManager } from './server/rankingManager';
-import { adminDb } from './server/adminDb';
+import { leagueAndStoreManager } from './server/leagueAndStoreManager';
 
 const app = express();
-const PORT = Number(process.env.PORT) || 3000;
+const PORT = process.env.PORT ? parseInt(process.env.PORT) : 3000;
 
-app.use(express.json());
-
-// Root Health Check endpoint required for Google Cloud Run
-app.get('/health', (_req: Request, res: Response) => {
-  res.status(200).json({ status: 'ok' });
-});
+// Allow up to 10MB JSON payload for profile avatar data URLs
+app.use(express.json({ limit: '10mb' }));
 
 // API Router
 const apiRouter = express.Router();
 
 apiRouter.get('/health', (_req: Request, res: Response) => {
-  res.status(200).json({ status: 'ok', serverTime: Date.now() });
+  res.json({ status: 'ok', serverTime: Date.now() });
 });
 
-// Create Room
+// ==================== AUTH & PROFILE ONBOARDING ROUTES ====================
+
+// 1. Real Google Login / Account Authentication
+apiRouter.post('/auth/google', (req: Request, res: Response) => {
+  try {
+    const { email, googleDisplayName, existingClientId } = req.body || {};
+    const result = leagueAndStoreManager.googleLoginAccount({
+      email,
+      googleDisplayName,
+      existingClientId,
+    });
+    res.json(result);
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : 'فشل تسجيل الدخول باستخدام Google';
+    res.status(400).json({ error: message });
+  }
+});
+
+// 2. Complete First-Time Profile Setup (Unique Username + Avatar + Immutable GX-XXXXXX ID)
+apiRouter.post('/auth/complete-profile', (req: Request, res: Response) => {
+  try {
+    const { userId, email, username, avatarDataUrl } = req.body || {};
+    if (!userId) {
+      return res.status(400).json({ error: 'معرف الحساب مطلوب' });
+    }
+    const account = leagueAndStoreManager.completeUserProfileSetup({
+      userId,
+      email,
+      username,
+      avatarDataUrl,
+    });
+    res.json({ account });
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : 'تعذر حفظ الملف الشخصي';
+    res.status(400).json({ error: message });
+  }
+});
+
+// ==================== PLAYERS, LEAGUE & REWARDS ROUTES ====================
+
+// Sync Player Account & Pull Pending Owner Top-Ups / Deliveries
+apiRouter.post('/players/sync', (req: Request, res: Response) => {
+  try {
+    const body = req.body || {};
+    if (!body.id) {
+      return res.status(400).json({ error: 'Player id is required' });
+    }
+    const result = leagueAndStoreManager.syncPlayerAccount(body);
+    res.json(result);
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : 'Unknown error';
+    res.status(400).json({ error: message });
+  }
+});
+
+// Search Players by Account ID (GX-XXXXXX) or Username
+apiRouter.get('/players/search', (req: Request, res: Response) => {
+  const q = typeof req.query.q === 'string' ? req.query.q : '';
+  const results = leagueAndStoreManager.searchPlayers(q);
+  res.json(results);
+});
+
+// Get Official GOALIX League Standings (Daily & Weekly — Rooms Only)
+apiRouter.get('/league/standings', (_req: Request, res: Response) => {
+  res.json(leagueAndStoreManager.getLeagueStandings());
+});
+
+// Record Single-Player AI Match Reward (Server-enforced Max 5 Coins, 0 Rank Points)
+apiRouter.post('/rewards/ai-match', (req: Request, res: Response) => {
+  try {
+    const { userId, matchId, gameId, outcome } = req.body || {};
+    const result = leagueAndStoreManager.recordAiMatchReward({
+      userId,
+      matchId,
+      gameId,
+      outcome,
+    });
+    res.json(result);
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : 'تعذر تسجيل مكافأة المباراة';
+    res.status(400).json({ error: message });
+  }
+});
+
+// Execute My Squad vs AI Trial Match (Server-enforced 3-day cooldown)
+apiRouter.post('/rewards/squad-trial', (req: Request, res: Response) => {
+  try {
+    const { userId, matchId, outcome } = req.body || {};
+    const result = leagueAndStoreManager.executeSquadTrialMatch({
+      userId,
+      matchId,
+      outcome,
+    });
+    res.json(result);
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : 'تجربة التشكيلة غير متاحة حاليًا';
+    res.status(400).json({ error: message });
+  }
+});
+
+// ==================== STORE, CATALOG & PURCHASE REQUEST ROUTES ====================
+
+// Get Top-Up Store Packages, Transactions, Registered Players, Products & Chat Catalog
+apiRouter.get('/store/state', (_req: Request, res: Response) => {
+  res.json(leagueAndStoreManager.getStoreState());
+});
+
+// Get Store Products & Quick Chat Messages Catalog
+apiRouter.get('/store/catalog', (_req: Request, res: Response) => {
+  res.json(leagueAndStoreManager.getCatalogAndMessages());
+});
+
+// Create Store Purchase Request (Status: PENDING)
+apiRouter.post('/store/purchase-request', (req: Request, res: Response) => {
+  try {
+    const { userId, productId, idempotencyKey } = req.body || {};
+    const requestRecord = leagueAndStoreManager.createStorePurchaseRequest({
+      userId,
+      productId,
+      idempotencyKey,
+    });
+    res.json({ request: requestRecord });
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : 'فشل إرسال طلب الشراء';
+    res.status(400).json({ error: message });
+  }
+});
+
+// Get User's Purchase Requests
+apiRouter.get('/store/purchase-requests/:userId', (req: Request, res: Response) => {
+  const list = leagueAndStoreManager.getUserPurchaseRequests(req.params.userId);
+  res.json({ requests: list });
+});
+
+// ==================== OWNER ADMIN CONTROL PANEL ROUTES ====================
+
+// Get Full Owner Admin Dashboard State (403 if not Owner)
+apiRouter.post('/admin/dashboard', (req: Request, res: Response) => {
+  try {
+    const { ownerUserId, ownerEmail } = req.body || {};
+    const state = leagueAndStoreManager.getAdminDashboardState(ownerUserId, ownerEmail);
+    res.json(state);
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : '403 Access Denied';
+    res.status(403).json({ error: message });
+  }
+});
+
+// Owner: Approve or Reject Store Purchase Request
+apiRouter.post('/admin/purchase-review', (req: Request, res: Response) => {
+  try {
+    const { ownerUserId, ownerEmail, requestId, decision } = req.body || {};
+    const updated = leagueAndStoreManager.reviewPurchaseRequestByOwner({
+      ownerUserId,
+      ownerEmail,
+      requestId,
+      decision,
+    });
+    res.json({ request: updated });
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : 'فشل معالجة طلب الشراء';
+    const status = message.includes('403') ? 403 : 400;
+    res.status(status).json({ error: message });
+  }
+});
+
+// Owner: Save / Update Store Product
+apiRouter.post('/admin/products/save', (req: Request, res: Response) => {
+  try {
+    const { ownerUserId, ownerEmail, product } = req.body || {};
+    const products = leagueAndStoreManager.saveStoreProductByOwner({
+      ownerUserId,
+      ownerEmail,
+      product,
+    });
+    res.json({ products });
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : 'فشل حفظ المنتج';
+    const status = message.includes('403') ? 403 : 400;
+    res.status(status).json({ error: message });
+  }
+});
+
+// Owner: Delete Store Product
+apiRouter.post('/admin/products/delete', (req: Request, res: Response) => {
+  try {
+    const { ownerUserId, ownerEmail, productId } = req.body || {};
+    const products = leagueAndStoreManager.deleteStoreProductByOwner({
+      ownerUserId,
+      ownerEmail,
+      productId,
+    });
+    res.json({ products });
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : 'فشل حذف المنتج';
+    const status = message.includes('403') ? 403 : 400;
+    res.status(status).json({ error: message });
+  }
+});
+
+// Owner: Save / Update Quick Chat Message
+apiRouter.post('/admin/chat-items/save', (req: Request, res: Response) => {
+  try {
+    const { ownerUserId, ownerEmail, item } = req.body || {};
+    const chatMessages = leagueAndStoreManager.saveQuickChatItemByOwner({
+      ownerUserId,
+      ownerEmail,
+      item,
+    });
+    res.json({ chatMessages });
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : 'فشل حفظ الرسالة';
+    const status = message.includes('403') ? 403 : 400;
+    res.status(status).json({ error: message });
+  }
+});
+
+// Owner: Delete Quick Chat Message
+apiRouter.post('/admin/chat-items/delete', (req: Request, res: Response) => {
+  try {
+    const { ownerUserId, ownerEmail, messageId } = req.body || {};
+    const chatMessages = leagueAndStoreManager.deleteQuickChatItemByOwner({
+      ownerUserId,
+      ownerEmail,
+      messageId,
+    });
+    res.json({ chatMessages });
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : 'فشل حذف الرسالة';
+    const status = message.includes('403') ? 403 : 400;
+    res.status(status).json({ error: message });
+  }
+});
+
+// Execute Owner Top-Up by Player ID
+apiRouter.post('/store/topup', (req: Request, res: Response) => {
+  try {
+    const result = leagueAndStoreManager.executeOwnerTopUp(req.body || {});
+    res.json(result);
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : 'فشل تنفيذ عملية الشحن';
+    res.status(400).json({ error: message });
+  }
+});
+
+// Owner: Save / Update Top-Up Package
+apiRouter.post('/store/packages/save', (req: Request, res: Response) => {
+  try {
+    const packages = leagueAndStoreManager.saveTopUpPackage(req.body || {});
+    res.json({ packages });
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : 'فشل حفظ الباقة';
+    res.status(400).json({ error: message });
+  }
+});
+
+// Owner: Delete Top-Up Package
+apiRouter.post('/store/packages/delete', (req: Request, res: Response) => {
+  try {
+    const { packageId } = req.body || {};
+    const packages = leagueAndStoreManager.deleteTopUpPackage(packageId);
+    res.json({ packages });
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : 'فشل حذف الباقة';
+    res.status(400).json({ error: message });
+  }
+});
+
+// ==================== REAL MULTIPLAYER ROOMS ROUTES (2 PLAYERS ONLY, NO BOTS) ====================
+
+// Get Public Waiting Rooms List
+apiRouter.get('/rooms', (_req: Request, res: Response) => {
+  res.json(roomManager.getWaitingRooms());
+});
+
+// Create Room (with RoomType, TimerSeconds, ChatEnabled)
 apiRouter.post('/rooms/create', (req: Request, res: Response) => {
   try {
-    const { hostId, hostName, gameId, mode } = req.body;
+    const { hostId, hostName, gameId, mode, roomType, timerSeconds, chatEnabled } = req.body || {};
     if (!hostId) {
       return res.status(400).json({ error: 'hostId is required' });
     }
-    const room = roomManager.createRoom(hostId, hostName, gameId, mode);
+    const room = roomManager.createRoom(
+      hostId,
+      hostName,
+      gameId,
+      mode,
+      roomType || 'PUBLIC',
+      timerSeconds || 30,
+      chatEnabled !== undefined ? Boolean(chatEnabled) : true
+    );
     res.json(room);
   } catch (err: unknown) {
     const message = err instanceof Error ? err.message : 'Unknown error';
@@ -37,10 +315,10 @@ apiRouter.post('/rooms/create', (req: Request, res: Response) => {
   }
 });
 
-// Join Room
+// Join Room (Player 1 VS Player 2 only)
 apiRouter.post('/rooms/join', (req: Request, res: Response) => {
   try {
-    const { code, guestId, guestName } = req.body;
+    const { code, guestId, guestName } = req.body || {};
     if (!code || !guestId) {
       return res.status(400).json({ error: 'code and guestId are required' });
     }
@@ -96,7 +374,7 @@ apiRouter.get('/rooms/:code/stream', (req: Request, res: Response) => {
 // Set Ready
 apiRouter.post('/rooms/:code/ready', (req: Request, res: Response) => {
   try {
-    const { userId, ready } = req.body;
+    const { userId, ready } = req.body || {};
     const room = roomManager.setReady(req.params.code, userId, ready);
     res.json(room);
   } catch (err: unknown) {
@@ -105,11 +383,11 @@ apiRouter.post('/rooms/:code/ready', (req: Request, res: Response) => {
   }
 });
 
-// Select Game & Mode
-apiRouter.post('/rooms/:code/select-game', (req: Request, res: Response) => {
+// Explicit Host Start Match
+apiRouter.post('/rooms/:code/start', (req: Request, res: Response) => {
   try {
-    const { hostId, gameId, mode } = req.body;
-    const room = roomManager.selectGame(req.params.code, hostId, gameId, mode);
+    const { hostId } = req.body || {};
+    const room = roomManager.startRoomMatch(req.params.code, hostId);
     res.json(room);
   } catch (err: unknown) {
     const message = err instanceof Error ? err.message : 'Unknown error';
@@ -117,10 +395,41 @@ apiRouter.post('/rooms/:code/select-game', (req: Request, res: Response) => {
   }
 });
 
+// Select Game, Mode, Timer & Chat Setting
+apiRouter.post('/rooms/:code/select-game', (req: Request, res: Response) => {
+  try {
+    const { hostId, gameId, mode, timerSeconds, chatEnabled } = req.body || {};
+    const room = roomManager.selectGame(
+      req.params.code,
+      hostId,
+      gameId,
+      mode,
+      timerSeconds,
+      chatEnabled
+    );
+    res.json(room);
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : 'Unknown error';
+    res.status(400).json({ error: message });
+  }
+});
+
+// Send Quick Chat Message (Server-Side enforced: Max 6 messages, 15s cooldown, ownership check)
+apiRouter.post('/rooms/:code/chat', (req: Request, res: Response) => {
+  try {
+    const { userId, messageId } = req.body || {};
+    const room = roomManager.sendQuickChatMessage(req.params.code, userId, messageId);
+    res.json(room);
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : 'فشل إرسال الرسالة';
+    res.status(400).json({ error: message });
+  }
+});
+
 // Submit STAT ARENA Answer
 apiRouter.post('/rooms/:code/stat-answer', (req: Request, res: Response) => {
   try {
-    const { userId, answer } = req.body;
+    const { userId, answer } = req.body || {};
     const room = roomManager.submitStatAnswer(req.params.code, userId, answer);
     res.json(room);
   } catch (err: unknown) {
@@ -132,7 +441,7 @@ apiRouter.post('/rooms/:code/stat-answer', (req: Request, res: Response) => {
 // Submit SANTRA Box Choice
 apiRouter.post('/rooms/:code/santra-box', (req: Request, res: Response) => {
   try {
-    const { userId, boxIndex } = req.body;
+    const { userId, boxIndex } = req.body || {};
     const room = roomManager.submitSantraBox(req.params.code, userId, boxIndex);
     res.json(room);
   } catch (err: unknown) {
@@ -166,7 +475,7 @@ apiRouter.post('/rooms/:code/start-simulation', (req: Request, res: Response) =>
 // Finish Match
 apiRouter.post('/rooms/:code/finish-match', (req: Request, res: Response) => {
   try {
-    const { hostGoals, guestGoals } = req.body;
+    const { hostGoals, guestGoals } = req.body || {};
     const room = roomManager.finishMatch(req.params.code, hostGoals, guestGoals);
     res.json(room);
   } catch (err: unknown) {
@@ -178,273 +487,12 @@ apiRouter.post('/rooms/:code/finish-match', (req: Request, res: Response) => {
 // Leave Room
 apiRouter.post('/rooms/:code/leave', (req: Request, res: Response) => {
   try {
-    const { userId } = req.body;
+    const { userId } = req.body || {};
     roomManager.leaveRoom(req.params.code, userId);
     res.json({ success: true });
   } catch (err: unknown) {
     const message = err instanceof Error ? err.message : 'Unknown error';
     res.status(400).json({ error: message });
-  }
-});
-
-// Official League Rankings (Room Matches Only: Win 3pts, Draw 1pt, Loss 0pts)
-apiRouter.get('/ranking', (req: Request, res: Response) => {
-  try {
-    const userId = req.query.userId as string | undefined;
-    const leaderboard = rankingManager.getLeaderboard(userId);
-    res.json(leaderboard);
-  } catch (err: unknown) {
-    const message = err instanceof Error ? err.message : 'Unknown error';
-    res.status(500).json({ error: message });
-  }
-});
-
-// Sync User Profile for Online Leaderboard
-apiRouter.post('/ranking/sync', (req: Request, res: Response) => {
-  try {
-    const { userId, username, avatar } = req.body;
-    if (!userId) {
-      return res.status(400).json({ error: 'userId is required' });
-    }
-    const player = rankingManager.syncUserProfile(userId, username, avatar);
-    res.json(player);
-  } catch (err: unknown) {
-    const message = err instanceof Error ? err.message : 'Unknown error';
-    res.status(500).json({ error: message });
-  }
-});
-
-// ================= AUTHENTICATION & LOGIN =================
-apiRouter.post('/auth/register', (req: Request, res: Response) => {
-  try {
-    const { username, password, avatar } = req.body;
-    if (!username || !username.trim()) {
-      return res.status(400).json({ error: 'يرجى إدخال اسم المدرب' });
-    }
-    const user = adminDb.registerUser(username, password, avatar);
-    rankingManager.syncUserProfile(user.id, user.username, user.avatar);
-    res.json({ success: true, user });
-  } catch (err: unknown) {
-    const message = err instanceof Error ? err.message : 'فشل التسجيل';
-    res.status(400).json({ error: message });
-  }
-});
-
-apiRouter.post('/auth/login', (req: Request, res: Response) => {
-  try {
-    const { username, password } = req.body;
-    if (!username || !username.trim()) {
-      return res.status(400).json({ error: 'يرجى إدخال اسم المدرب أو Account ID' });
-    }
-    const user = adminDb.authenticate(username, password);
-    if (!user) {
-      return res.status(401).json({ error: 'اسم المستخدم أو كلمة المرور غير صحيحة' });
-    }
-    rankingManager.syncUserProfile(user.id, user.username, user.avatar);
-    res.json({ success: true, user });
-  } catch (err: unknown) {
-    const message = err instanceof Error ? err.message : 'فشل تسجيل الدخول';
-    res.status(500).json({ error: message });
-  }
-});
-
-// Google Sign-In & Instant Account Linking
-apiRouter.post('/auth/google', (req: Request, res: Response) => {
-  try {
-    const { googleId, email, name, avatar } = req.body;
-    if (!email) {
-      return res.status(400).json({ error: 'البريد الإلكتروني مطلوب' });
-    }
-    const user = adminDb.handleGoogleLogin({
-      googleId: googleId || `g_${Date.now()}`,
-      email,
-      name: name || email.split('@')[0],
-      avatar
-    });
-    rankingManager.syncUserProfile(user.id, user.username, user.avatar);
-    res.json({ success: true, user });
-  } catch (err: unknown) {
-    const message = err instanceof Error ? err.message : 'فشل تسجيل الدخول عبر Google';
-    res.status(500).json({ error: message });
-  }
-});
-
-// Profile Management
-apiRouter.post('/profile/update-username', (req: Request, res: Response) => {
-  try {
-    const { userId, newUsername } = req.body;
-    if (!userId || !newUsername) {
-      return res.status(400).json({ error: 'المعرف واسم المستخدم الجديد مطلوبان' });
-    }
-    const user = adminDb.updateUsername(userId, newUsername);
-    rankingManager.syncUserProfile(user.id, user.username, user.avatar);
-    res.json({ success: true, user });
-  } catch (err: unknown) {
-    const message = err instanceof Error ? err.message : 'فشل تحديث الاسم';
-    res.status(400).json({ error: message });
-  }
-});
-
-apiRouter.post('/profile/update-avatar', (req: Request, res: Response) => {
-  try {
-    const { userId, avatar } = req.body;
-    if (!userId || !avatar) {
-      return res.status(400).json({ error: 'المعرف والصورة مطلوبان' });
-    }
-    const user = adminDb.updateAvatar(userId, avatar);
-    rankingManager.syncUserProfile(user.id, user.username, user.avatar);
-    res.json({ success: true, user });
-  } catch (err: unknown) {
-    const message = err instanceof Error ? err.message : 'فشل تحديث الصورة';
-    res.status(400).json({ error: message });
-  }
-});
-
-apiRouter.get('/profile/:id', (req: Request, res: Response) => {
-  try {
-    const user = adminDb.getUser(req.params.id);
-    if (!user) {
-      return res.status(404).json({ error: 'المستخدم غير موجود' });
-    }
-    res.json({ success: true, user });
-  } catch (err: unknown) {
-    const message = err instanceof Error ? err.message : 'خطأ في جلب الملف الشخصي';
-    res.status(500).json({ error: message });
-  }
-});
-
-// ================= STORE & REAL PURCHASES =================
-apiRouter.get('/store/products', (req: Request, res: Response) => {
-  try {
-    const category = req.query.category as any;
-    const products = adminDb.getStoreProducts(category);
-    res.json({ success: true, products });
-  } catch (err: unknown) {
-    const message = err instanceof Error ? err.message : 'فشل جلب منتجات المتجر';
-    res.status(500).json({ error: message });
-  }
-});
-
-apiRouter.post('/store/purchase', (req: Request, res: Response) => {
-  try {
-    const { userId, productId } = req.body;
-    if (!userId || !productId) {
-      return res.status(400).json({ error: 'معرف المستخدم ومعرف المنتج مطلوبان' });
-    }
-    const result = adminDb.purchaseProduct(userId, productId);
-    rankingManager.syncUserProfile(result.user.id, result.user.username, result.user.avatar);
-    res.json(result);
-  } catch (err: unknown) {
-    const message = err instanceof Error ? err.message : 'فشل إتمام الشراء';
-    res.status(400).json({ error: message });
-  }
-});
-
-// ================= ADMIN & PRIVATE DATABASE ROOM =================
-apiRouter.get('/admin/database', (req: Request, res: Response) => {
-  try {
-    const snapshot = adminDb.getDatabaseSnapshot();
-    const activeRooms = roomManager.getAllRooms();
-    const rankings = rankingManager.getLeaderboard();
-    res.json({
-      success: true,
-      snapshot,
-      activeRooms,
-      rankings,
-      serverTime: Date.now()
-    });
-  } catch (err: unknown) {
-    const message = err instanceof Error ? err.message : 'فشل جلب بيانات الإدارة';
-    res.status(500).json({ error: message });
-  }
-});
-
-apiRouter.post('/admin/search-player', (req: Request, res: Response) => {
-  try {
-    const { query } = req.body;
-    if (!query) {
-      return res.status(400).json({ error: 'يرجى إدخال Account ID أو اسم المستخدم' });
-    }
-    const user = adminDb.getUser(query);
-    if (!user) {
-      return res.status(404).json({ error: 'لم يتم العثور على أي لاعب بهذا الـ ID أو الاسم' });
-    }
-    res.json({ success: true, user });
-  } catch (err: unknown) {
-    const message = err instanceof Error ? err.message : 'خطأ في البحث';
-    res.status(500).json({ error: message });
-  }
-});
-
-apiRouter.post('/admin/adjust-coins', (req: Request, res: Response) => {
-  try {
-    const { targetUserIdOrAccountId, coinsDelta, adminId, reason } = req.body;
-    if (!targetUserIdOrAccountId || typeof coinsDelta !== 'number') {
-      return res.status(400).json({ error: 'البيانات غير مكتملة' });
-    }
-    const user = adminDb.adjustUserCoins(
-      targetUserIdOrAccountId, 
-      coinsDelta, 
-      adminId || 'dev_mahmoud_salama', 
-      reason
-    );
-    res.json({ success: true, user });
-  } catch (err: unknown) {
-    const message = err instanceof Error ? err.message : 'فشل تعديل رصيد الكوينز';
-    res.status(400).json({ error: message });
-  }
-});
-
-apiRouter.post('/admin/products/create', (req: Request, res: Response) => {
-  try {
-    const product = adminDb.createStoreProduct(req.body);
-    res.json({ success: true, product });
-  } catch (err: unknown) {
-    const message = err instanceof Error ? err.message : 'فشل إنشاء المنتج';
-    res.status(400).json({ error: message });
-  }
-});
-
-apiRouter.post('/admin/products/update', (req: Request, res: Response) => {
-  try {
-    const { id, ...updates } = req.body;
-    if (!id) return res.status(400).json({ error: 'معرف المنتج مطلوب' });
-    const product = adminDb.updateStoreProduct(id, updates);
-    res.json({ success: true, product });
-  } catch (err: unknown) {
-    const message = err instanceof Error ? err.message : 'فشل تعديل المنتج';
-    res.status(400).json({ error: message });
-  }
-});
-
-apiRouter.post('/admin/products/delete', (req: Request, res: Response) => {
-  try {
-    const { id } = req.body;
-    if (!id) return res.status(400).json({ error: 'معرف المنتج مطلوب' });
-    const success = adminDb.deleteStoreProduct(id);
-    res.json({ success });
-  } catch (err: unknown) {
-    const message = err instanceof Error ? err.message : 'فشل حذف المنتج';
-    res.status(400).json({ error: message });
-  }
-});
-
-apiRouter.post('/admin/adjust-user', (req: Request, res: Response) => {
-  try {
-    const { userId, coinsDelta, pointsDelta, bidsDelta } = req.body;
-    if (!userId) {
-      return res.status(400).json({ error: 'معرف المستخدم مطلوب' });
-    }
-    const updated = adminDb.updateUserCoinsAndPoints(
-      userId,
-      coinsDelta || 0,
-      pointsDelta || 0,
-      bidsDelta || 0
-    );
-    res.json({ success: true, user: updated });
-  } catch (err: unknown) {
-    const message = err instanceof Error ? err.message : 'فشل تعديل المستخدم';
-    res.status(500).json({ error: message });
   }
 });
 
@@ -454,22 +502,12 @@ app.use(express.static(path.resolve('public')));
 app.use('/api', apiRouter);
 
 async function start() {
-  const distPath = path.resolve('dist');
-  const hasDist = fs.existsSync(path.join(distPath, 'index.html'));
-  const isProduction = process.env.NODE_ENV === 'production' || (hasDist && process.env.NODE_ENV !== 'development');
-
-  if (isProduction) {
-    console.log(`Starting in PRODUCTION mode. Serving static assets from ${distPath}`);
-    app.use(express.static(distPath));
-    app.get('*', (req: Request, res: Response, next) => {
-      if (req.path.startsWith('/api') || req.path === '/health') {
-        return next();
-      }
-      res.sendFile(path.join(distPath, 'index.html'));
+  if (process.env.NODE_ENV === 'production') {
+    app.use(express.static('dist'));
+    app.get('*', (_req: Request, res: Response) => {
+      res.sendFile(path.resolve('dist', 'index.html'));
     });
   } else {
-    console.log('Starting in DEVELOPMENT mode with Vite middleware');
-    const { createServer: createViteServer } = await import('vite');
     const vite = await createViteServer({
       server: { middlewareMode: true },
       appType: 'spa',
@@ -477,20 +515,9 @@ async function start() {
     app.use(vite.middlewares);
   }
 
-  const server = app.listen(PORT, '0.0.0.0', () => {
-    console.log(`GOALIX server listening on http://0.0.0.0:${PORT} (mode: ${isProduction ? 'production' : 'development'})`);
+  app.listen(PORT, '0.0.0.0', () => {
+    console.log(`GOALIX server listening on http://0.0.0.0:${PORT}`);
   });
-
-  const shutdown = () => {
-    console.log('Shutting down server gracefully...');
-    server.close(() => {
-      console.log('Server closed successfully.');
-      process.exit(0);
-    });
-  };
-
-  process.on('SIGTERM', shutdown);
-  process.on('SIGINT', shutdown);
 }
 
 start();

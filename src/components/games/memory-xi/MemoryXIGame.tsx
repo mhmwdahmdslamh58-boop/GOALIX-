@@ -407,17 +407,19 @@ export const MemoryXIGame: React.FC<MemoryXIGameProps> = ({
 
     setMatchWinner(winner);
 
-    // Authoritative coins rewards: Offline win = +5, loss = -5
-    const { coinsChanged } = recordMatchOutcome({
-      matchId,
+    const coinsReward = outcome === 'win' ? 45 : outcome === 'draw' ? 20 : 10;
+    recordMatchOutcome({
+      matchId: `memxi_${Date.now()}_${currentRoundIndex}`,
       gameId: 'memory_xi',
       isOnline: false,
-      outcome
+      outcome,
+      customCoinsReward: coinsReward,
+      awardSantraChest: outcome === 'win' ? 'Gold' : undefined,
     });
 
-    setRewardCoins(coinsChanged);
+    setRewardCoins(coinsReward);
     setGamePhase('MATCH_RESULT');
-    onGameComplete(winner, coinsChanged);
+    onGameComplete(winner, coinsReward);
   };
 
   // Cumulative totals

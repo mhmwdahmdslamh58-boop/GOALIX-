@@ -1,5 +1,7 @@
-import { Player, PositionType, CardTier } from '../types/game';
+import { Player, PositionType, CardTier, PackTierId, SantraChestTier } from '../types/game';
 import { validateAwardedPlayerPosition } from '../services/positions';
+
+const CUSTOM_PLAYERS_KEY = 'goalix_custom_players_v1';
 
 export const INITIAL_PLAYERS: Player[] = [
   // ================= ICON LEGACY (96 - 105) =================
@@ -774,21 +776,51 @@ export const INITIAL_PLAYERS: Player[] = [
   }
 ];
 
+export function getAllPlayers(): Player[] {
+  try {
+    const raw = typeof localStorage !== 'undefined' ? localStorage.getItem(CUSTOM_PLAYERS_KEY) : null;
+    if (raw) {
+      const custom: Player[] = JSON.parse(raw);
+      return [...INITIAL_PLAYERS, ...custom];
+    }
+  } catch {
+    // Fallback
+  }
+  return INITIAL_PLAYERS;
+}
+
+export function addCustomPlayerToDatabase(newPlayer: Omit<Player, 'id'>): Player {
+  const created: Player = {
+    ...newPlayer,
+    id: `custom_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`
+  };
+  try {
+    const raw = localStorage.getItem(CUSTOM_PLAYERS_KEY);
+    const custom: Player[] = raw ? JSON.parse(raw) : [];
+    custom.unshift(created);
+    localStorage.setItem(CUSTOM_PLAYERS_KEY, JSON.stringify(custom));
+  } catch {
+    // Ignore storage error
+  }
+  return created;
+}
+
 export function getPlayerById(id: string): Player | undefined {
-  return INITIAL_PLAYERS.find(p => p.id === id);
+  return getAllPlayers().find(p => p.id === id);
 }
 
 /**
  * Returns a random player strictly matching the expected position.
  */
 export function getRandomPlayerByPosition(position: PositionType, excludeIds: string[] = []): Player {
-  const eligible = INITIAL_PLAYERS.filter(p => p.position === position && !excludeIds.includes(p.id));
+  const all = getAllPlayers();
+  const eligible = all.filter(p => p.position === position && !excludeIds.includes(p.id));
   if (eligible.length > 0) {
     return eligible[Math.floor(Math.random() * eligible.length)];
   }
   // fallback strictly within same position
-  const fallback = INITIAL_PLAYERS.filter(p => p.position === position);
-  return fallback[Math.floor(Math.random() * fallback.length)] || INITIAL_PLAYERS.find(p => p.position === position)!;
+  const fallback = all.filter(p => p.position === position);
+  return fallback[Math.floor(Math.random() * fallback.length)] || all.find(p => p.position === position)!;
 }
 
 /**
@@ -797,7 +829,8 @@ export function getRandomPlayerByPosition(position: PositionType, excludeIds: st
  * it MUST fall back to a player from the CURRENT POSITION, NEVER another position!
  */
 export function getRandomPlayerByClubAndPosition(club: string, position: PositionType): Player {
-  const directMatches = INITIAL_PLAYERS.filter(
+  const all = getAllPlayers();
+  const directMatches = all.filter(
     p => p.club.toLowerCase() === club.toLowerCase() && p.position === position
   );
   if (directMatches.length > 0) {
@@ -808,7 +841,99 @@ export function getRandomPlayerByClubAndPosition(club: string, position: Positio
 }
 
 export function openPackReward(tier: CardTier): Player {
-  const eligible = INITIAL_PLAYERS.filter(p => p.cardType === tier);
-  if (eligible.length === 0) return INITIAL_PLAYERS[0];
+  const all = getAllPlayers();
+  const eligible = all.filter(p => p.cardType === tier);
+  if (eligible.length === 0) return all[0];
   return eligible[Math.floor(Math.random() * eligible.length)];
+}
+
+export function openPackRewardByTier(packTier: PackTierId): { players: Player[]; bonusCoins: number } {
+  const all = getAllPlayers();
+  const pickRandom = (pool: Player[], count: number): Player[] => {
+    const shuffled = [...pool].sort(() => 0.5 - Math.random());
+    return shuffled.slice(0, count);
+  };
+
+  switch (packTier) {
+    case 'BRONZE': {
+      const pool = all.filter(p => p.ovr <= 85);
+      return { players: pickRandom(pool.length ? pool : all, 1), bonusCoins: 5 };
+    }
+    case 'WEEKLY': {
+      const pool = all.filter(p => p.cardType === 'WEEKLY' || (p.ovr >= 83 && p.ovr <= 88));
+      return { players: pickRandom(pool.length ? pool : all, 1), bonusCoins: 10 };
+    }
+    case 'GOLD': {
+      const pool = all.filter(p => p.ovr >= 84 && p.ovr <= 92);
+      return { players: pickRandom(pool.length >= 2 ? pool : all, 2), bonusCoins: 20 };
+    }
+    case 'ELITE': {
+      const pool = all.filter(p => p.cardType === 'ELITE');
+      return { players: pickRandom(pool.length ? pool : all, 1), bonusCoins: 35 };
+    }
+    case 'ICON': {
+      const pool = all.filter(p => p.cardType === 'ICON');
+      return { players: pickRandom(pool.length ? pool : all, 1), bonusCoins: 75 };
+    }
+  }
+}
+
+export interface SantraChestRewardResult {
+  tier: SantraChestTier;
+  coinsAwarded: number;
+  playerAwarded: Player;
+  descriptionAr: string;
+}
+
+export function generateSantraChestReward(tier: SantraChestTier, preferredPosition?: PositionType): SantraChestRewardResult {
+  const all = getAllPlayers();
+  const filterByPos = (pool: Player[]) => {
+    if (!preferredPosition) return pool;
+    const posMatched = pool.filter(p => p.position === preferredPosition);
+    return posMatched.length > 0 ? posMatched : pool;
+  };
+
+  let pool: Player[] = [];
+  let coinsAwarded = 15;
+  let descriptionAr = '';
+
+  switch (tier) {
+    case 'Bronze':
+      pool = filterByPos(all.filter(p => p.ovr <= 84));
+      coinsAwarded = 15 + Math.floor(Math.random() * 11); // 15-25
+      descriptionAr = 'مكافأة صندوق سانترا البرونزي';
+      break;
+    case 'Silver':
+      pool = filterByPos(all.filter(p => p.ovr >= 84 && p.ovr <= 86));
+      coinsAwarded = 30 + Math.floor(Math.random() * 16); // 30-45
+      descriptionAr = 'مكافأة صندوق سانترا الفضي';
+      break;
+    case 'Gold':
+      pool = filterByPos(all.filter(p => p.ovr >= 85 && p.ovr <= 90));
+      coinsAwarded = 55 + Math.floor(Math.random() * 26); // 55-80
+      descriptionAr = 'مكافأة صندوق سانترا الذهبي';
+      break;
+    case 'Elite':
+      pool = filterByPos(all.filter(p => p.cardType === 'ELITE'));
+      coinsAwarded = 90 + Math.floor(Math.random() * 41); // 90-130
+      descriptionAr = 'مكافأة صندوق سانترا النخبة (ELITE)';
+      break;
+    case 'Legendary':
+      pool = filterByPos(all.filter(p => p.cardType === 'ICON'));
+      coinsAwarded = 160 + Math.floor(Math.random() * 61); // 160-220
+      descriptionAr = 'مكافأة صندوق سانترا الأسطوري (LEGENDARY)';
+      break;
+  }
+
+  if (pool.length === 0) {
+    pool = preferredPosition ? all.filter(p => p.position === preferredPosition) : all;
+  }
+  const playerAwarded = pool[Math.floor(Math.random() * pool.length)] || all[0];
+
+  return {
+    tier,
+    coinsAwarded,
+    playerAwarded,
+    descriptionAr
+  };
 }

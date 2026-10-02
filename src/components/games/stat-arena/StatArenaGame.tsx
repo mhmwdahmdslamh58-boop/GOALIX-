@@ -1,704 +1,746 @@
-import React, { useState } from 'react';
-import { 
-  GameMode, 
-  CpuDifficulty, 
-  PositionType, 
-  StatQuestion, 
-  Player 
-} from '../../../types/game';
+import React, { useState, useEffect } from 'react';
+import { FormationType, GameMode, Player, StatQuestion, SantraChestTier } from '../../../types/game';
 import { getQuestionsForGame } from '../../../data/questions';
 import { getRandomPlayerByPosition } from '../../../data/players';
-import { 
-  getPositionOrder, 
-  getPositionLabelAr 
-} from '../../../services/positions';
+import { getPositionOrder, getPositionLabelAr } from '../../../services/positions';
 import { GoldButton } from '../../common/GoldButton';
+import { PlayerCard } from '../../common/PlayerCard';
+import { PitchTactics } from '../../common/PitchTactics';
 import { PassThePhoneModal } from '../../common/PassThePhoneModal';
 import { MatchSimulationScreen } from '../simulation/MatchSimulationScreen';
-import { LiveSquadPitch } from '../common/LiveSquadPitch';
+import { MatchSimulationOutput } from '../simulation/MatchEngine';
 import { sounds } from '../../../services/audio';
-import { Trophy, HelpCircle, User, Bot, ArrowRight, Check, Award } from 'lucide-react';
+import { recordMatchOutcome, addPlayerToCollection } from '../../../services/storage';
+import confetti from 'canvas-confetti';
+import {
+  Trophy,
+  Clock,
+  CheckCircle2,
+  ArrowRight,
+  Sparkles,
+  Bot,
+  Users,
+  Coins,
+  Award,
+  Package,
+  RotateCcw,
+} from 'lucide-react';
 
 interface StatArenaGameProps {
   onBack: () => void;
-  onGameComplete: (winner: 'p1' | 'p2' | 'draw', coinsReward: number) => void;
-  player1Name?: string;
+  onFinishSave: () => void;
 }
 
-type OpponentType = 'cpu' | 'same_device';
-
-export const StatArenaGame: React.FC<StatArenaGameProps> = ({
-  onBack,
-  onGameComplete,
-  player1Name: defaultP1Name = 'كابتن جواليكس'
-}) => {
-  // Game Setup State
-  const [inSetup, setInSetup] = useState(true);
-  const [p1CustomName, setP1CustomName] = useState(defaultP1Name);
-  const [p2CustomName, setP2CustomName] = useState('اللاعب 2');
+export const StatArenaGame: React.FC<StatArenaGameProps> = ({ onBack, onFinishSave }) => {
+  const [phase, setPhase] = useState<'setup' | 'playing' | 'pass' | 'reveal' | 'simulating' | 'finished'>('setup');
+  const [playType, setPlayType] = useState<'solo_ai' | 'local_2p'>('solo_ai');
+  const [aiDifficulty, setAiDifficulty] = useState<'easy' | 'medium' | 'hard'>('medium');
   const [mode, setMode] = useState<GameMode>('quick_five');
-  const [opponentType, setOpponentType] = useState<OpponentType>('cpu');
-  const [cpuDifficulty, setCpuDifficulty] = useState<CpuDifficulty>('Pro');
+  const [p1Name, setP1Name] = useState('المدير الفني 1');
+  const [p2Name, setP2Name] = useState('محلل البيانات AI');
+  const [p1Formation, setP1Formation] = useState<FormationType>('4-3-3');
+  const [p2Formation, setP2Formation] = useState<FormationType>('4-3-3');
 
-  // Active Match State
-  const [positions, setPositions] = useState<PositionType[]>(getPositionOrder('quick_five'));
   const [questions, setQuestions] = useState<StatQuestion[]>([]);
-  const [currentRoundIndex, setCurrentRoundIndex] = useState(0);
+  const [currentRound, setCurrentRound] = useState(0);
+  const [activePlayer, setActivePlayer] = useState<1 | 2>(1);
+  const [p1Answer, setP1Answer] = useState<number>(0);
+  const [p2Answer, setP2Answer] = useState<number>(0);
+  const [inputValue, setInputValue] = useState<string>('');
+  const [timeLeft, setTimeLeft] = useState<number>(20);
 
-  // Answers & Differences
-  const [p1Answer, setP1Answer] = useState<string>('');
-  const [p2Answer, setP2Answer] = useState<string>('');
-  const [p1DiffSum, setP1DiffSum] = useState<number>(0);
-  const [p2DiffSum, setP2DiffSum] = useState<number>(0);
+  const [p1Score, setP1Score] = useState(0);
+  const [p2Score, setP2Score] = useState(0);
+  const [p1Squad, setP1Squad] = useState<(Player | null)[]>([]);
+  const [p2Squad, setP2Squad] = useState<(Player | null)[]>([]);
+  const [roundWinner, setRoundWinner] = useState<1 | 2 | 'draw'>('draw');
+  const [lastAwardedP1, setLastAwardedP1] = useState<Player | null>(null);
+  const [lastAwardedP2, setLastAwardedP2] = useState<Player | null>(null);
+  const [simResult, setSimResult] = useState<MatchSimulationOutput | null>(null);
+  const [rewardsSaved, setRewardsSaved] = useState(false);
 
-  // Same-Device Passing
-  const [waitingForP2Turn, setWaitingForP2Turn] = useState(false);
-  const [showPassModal, setShowPassModal] = useState(false);
+  const totalRounds = mode === 'quick_five' ? 5 : 11;
+  const p1Positions = getPositionOrder(mode);
+  const p2Positions = getPositionOrder(mode);
 
-  // Round Results
-  const [roundRevealed, setRoundRevealed] = useState(false);
-  const [lastRoundWinner, setLastRoundWinner] = useState<'p1' | 'p2' | 'tie' | null>(null);
-  const [loserReward, setLoserReward] = useState<{ recipient: string; player: Player } | null>(null);
+  useEffect(() => {
+    if (playType === 'solo_ai' && p2Name === 'المدير الفني 2') {
+      setP2Name('محلل البيانات AI');
+    } else if (playType === 'local_2p' && p2Name === 'محلل البيانات AI') {
+      setP2Name('المدير الفني 2');
+    }
+  }, [playType, p2Name]);
 
-  // Accumulated Squads
-  const [p1Squad, setP1Squad] = useState<Player[]>([]);
-  const [p2Squad, setP2Squad] = useState<Player[]>([]);
-
-  // Challenge Complete & Simulation
-  const [challengeFinished, setChallengeFinished] = useState(false);
-  const [showSimScreen, setShowSimScreen] = useState(false);
-
-  const startMatch = () => {
-    sounds.playTap();
-    const posList = getPositionOrder(mode);
-    const matchQuestions = getQuestionsForGame(posList);
-
-    setPositions(posList);
-    setQuestions(matchQuestions);
-    setCurrentRoundIndex(0);
-    setP1DiffSum(0);
-    setP2DiffSum(0);
-    setP1Squad([]);
-    setP2Squad([]);
-    setP1Answer('');
-    setP2Answer('');
-    setRoundRevealed(false);
-    setLastRoundWinner(null);
-    setLoserReward(null);
-    setChallengeFinished(false);
-    setInSetup(false);
+  const startGame = () => {
+    sounds.playWhistle();
+    const qs = getQuestionsForGame(p1Positions);
+    setQuestions(qs);
+    setP1Squad(Array(totalRounds).fill(null));
+    setP2Squad(Array(totalRounds).fill(null));
+    setCurrentRound(0);
+    setActivePlayer(1);
+    setP1Score(0);
+    setP2Score(0);
+    setInputValue('');
+    setTimeLeft(20);
+    setSimResult(null);
+    setRewardsSaved(false);
+    setPhase('playing');
   };
 
-  const currentPos = positions[currentRoundIndex];
-  const currentQ = questions[currentRoundIndex];
+  useEffect(() => {
+    if (phase !== 'playing') return;
+    if (timeLeft <= 0) {
+      handleSubmitAnswer();
+      return;
+    }
+    const timer = setTimeout(() => setTimeLeft((t) => t - 1), 1000);
+    return () => clearTimeout(timer);
+  }, [phase, timeLeft]);
 
-  // Submit Player 1 Answer
-  const handleP1Submit = () => {
-    if (!p1Answer.trim() || isNaN(Number(p1Answer))) return;
+  const generateSmartAiGuess = (correctAnswer: number): number => {
+    const varianceRatio = aiDifficulty === 'hard' ? 0.08 : aiDifficulty === 'medium' ? 0.2 : 0.38;
+    const maxDelta = Math.max(2, Math.round(correctAnswer * varianceRatio));
+    const offset = Math.floor(Math.random() * (maxDelta * 2 + 1)) - maxDelta;
+    return Math.max(0, correctAnswer + offset);
+  };
+
+  const handleSubmitAnswer = (e?: React.FormEvent) => {
+    if (e) e.preventDefault();
     sounds.playTap();
+    const numericVal = parseInt(inputValue || '0', 10) || 0;
 
-    if (opponentType === 'cpu') {
-      // Calculate intelligent CPU Answer based on difficulty
-      const correct = currentQ.correctAnswer;
-      let variance = 0;
-      if (cpuDifficulty === 'Rookie') variance = Math.floor(Math.random() * 25) - 12;
-      else if (cpuDifficulty === 'Pro') variance = Math.floor(Math.random() * 12) - 6;
-      else if (cpuDifficulty === 'Elite') variance = Math.floor(Math.random() * 6) - 3;
-      else if (cpuDifficulty === 'Legend') variance = Math.floor(Math.random() * 3) - 1;
-
-      const generatedCpuAns = Math.max(0, correct + variance);
-      evaluateRound(Number(p1Answer), generatedCpuAns);
+    if (playType === 'solo_ai') {
+      setP1Answer(numericVal);
+      const q = questions[currentRound];
+      const aiVal = generateSmartAiGuess(q.correctAnswer);
+      setP2Answer(aiVal);
+      evaluateRound(numericVal, aiVal);
     } else {
-      // Same-Device: Hide P1 answer and prompt to pass the phone to P2
-      setWaitingForP2Turn(true);
-      setShowPassModal(true);
+      if (activePlayer === 1) {
+        setP1Answer(numericVal);
+        setInputValue('');
+        setActivePlayer(2);
+        setPhase('pass');
+      } else {
+        setP2Answer(numericVal);
+        setInputValue('');
+        evaluateRound(p1Answer, numericVal);
+      }
     }
   };
 
-  // Submit Player 2 Answer (Same Device)
-  const handleP2Submit = () => {
-    if (!p2Answer.trim() || isNaN(Number(p2Answer))) return;
-    sounds.playTap();
-    evaluateRound(Number(p1Answer), Number(p2Answer));
-  };
-
-  // Authoritative Round Evaluation
   const evaluateRound = (ans1: number, ans2: number) => {
-    sounds.playReveal();
-    const correct = currentQ.correctAnswer;
-    const diff1 = Math.abs(ans1 - correct);
-    const diff2 = Math.abs(ans2 - correct);
+    const q = questions[currentRound];
+    const diff1 = Math.abs(q.correctAnswer - ans1);
+    const diff2 = Math.abs(q.correctAnswer - ans2);
 
-    const newP1DiffSum = p1DiffSum + diff1;
-    const newP2DiffSum = p2DiffSum + diff2;
-    setP1DiffSum(newP1DiffSum);
-    setP2DiffSum(newP2DiffSum);
+    const pos1 = p1Positions[currentRound];
+    const pos2 = p2Positions[currentRound];
 
-    let winner: 'p1' | 'p2' | 'tie' = 'tie';
-    let reward: { recipient: string; player: Player } | null = null;
+    const currentP1Ids = p1Squad.filter((p): p is Player => p !== null).map((p) => p.id);
+    const currentP2Ids = p2Squad.filter((p): p is Player => p !== null).map((p) => p.id);
+
+    let winner: 1 | 2 | 'draw' = 'draw';
+    let playerForP1: Player;
+    let playerForP2: Player;
 
     if (diff1 < diff2) {
-      winner = 'p1';
-      // P2 is loser -> receives random player from CURRENT POSITION PHASE
-      const rewardPlayer = getRandomPlayerByPosition(currentPos);
-      setP2Squad(prev => [...prev, rewardPlayer]);
-      reward = { recipient: opponentType === 'cpu' ? `الكمبيوتر (${cpuDifficulty})` : p2CustomName, player: rewardPlayer };
+      winner = 1;
+      setP1Score((s) => s + 1);
+      playerForP1 = getRandomPlayerByPosition(pos1, currentP1Ids);
+      playerForP2 = getRandomPlayerByPosition(pos2, [...currentP2Ids, playerForP1.id]);
     } else if (diff2 < diff1) {
-      winner = 'p2';
-      // P1 is loser -> receives random player from CURRENT POSITION PHASE
-      const rewardPlayer = getRandomPlayerByPosition(currentPos);
-      setP1Squad(prev => [...prev, rewardPlayer]);
-      reward = { recipient: p1CustomName, player: rewardPlayer };
+      winner = 2;
+      setP2Score((s) => s + 1);
+      playerForP2 = getRandomPlayerByPosition(pos2, currentP2Ids);
+      playerForP1 = getRandomPlayerByPosition(pos1, [...currentP1Ids, playerForP2.id]);
     } else {
-      winner = 'tie';
-      const r1 = getRandomPlayerByPosition(currentPos);
-      const r2 = getRandomPlayerByPosition(currentPos, [r1.id]);
-      setP1Squad(prev => [...prev, r1]);
-      setP2Squad(prev => [...prev, r2]);
+      winner = 'draw';
+      setP1Score((s) => s + 1);
+      setP2Score((s) => s + 1);
+      playerForP1 = getRandomPlayerByPosition(pos1, currentP1Ids);
+      playerForP2 = getRandomPlayerByPosition(pos2, [...currentP2Ids, playerForP1.id]);
     }
 
-    setLastRoundWinner(winner);
-    setLoserReward(reward);
-    setRoundRevealed(true);
-    setWaitingForP2Turn(false);
+    setRoundWinner(winner);
+    setLastAwardedP1(playerForP1);
+    setLastAwardedP2(playerForP2);
+
+    setP1Squad((prev) => {
+      const next = [...prev];
+      next[currentRound] = playerForP1;
+      return next;
+    });
+    setP2Squad((prev) => {
+      const next = [...prev];
+      next[currentRound] = playerForP2;
+      return next;
+    });
+
+    addPlayerToCollection(playerForP1);
+    if (playType === 'local_2p') {
+      addPlayerToCollection(playerForP2);
+    }
+    sounds.playSuccess();
+    setPhase('reveal');
   };
 
-  // Move to next round or finish challenge
   const handleNextRound = () => {
     sounds.playTap();
-    if (currentRoundIndex + 1 < positions.length) {
-      setCurrentRoundIndex(prev => prev + 1);
-      setP1Answer('');
-      setP2Answer('');
-      setRoundRevealed(false);
-      setLastRoundWinner(null);
-      setLoserReward(null);
+    if (currentRound + 1 < totalRounds) {
+      setCurrentRound((r) => r + 1);
+      setActivePlayer(1);
+      setTimeLeft(20);
+      if (playType === 'local_2p') {
+        setPhase('pass');
+      } else {
+        setPhase('playing');
+      }
     } else {
-      // Challenge phase complete! Show comparison & start simulation
-      setChallengeFinished(true);
+      setPhase('simulating');
     }
   };
 
-  // Calculate challenge winner for 1-0 advantage
-  const challengeAdvantage = p1DiffSum < p2DiffSum ? 'p1' : p2DiffSum < p1DiffSum ? 'p2' : 'none';
+  const calculateSquadRating = (squad: (Player | null)[]) => {
+    const valid = squad.filter((p): p is Player => p !== null);
+    if (valid.length === 0) return 0;
+    const sum = valid.reduce((acc, p) => acc + p.ovr, 0);
+    return Math.round(sum / valid.length);
+  };
 
-  return (
-    <div className="min-h-screen bg-[#08080a] text-zinc-100 pb-20 select-none">
-      {/* Top Header */}
-      <div className="sticky top-0 z-30 bg-[#0a0b0e]/95 backdrop-blur-md border-b border-zinc-800 px-4 py-3 flex items-center justify-between">
+  const finalizeRewardsOnce = (outcome: 'win' | 'draw' | 'loss') => {
+    if (rewardsSaved) return;
+    setRewardsSaved(true);
+    const coins = outcome === 'win' ? 45 : outcome === 'draw' ? 20 : 10;
+    const chestTier: SantraChestTier | undefined =
+      outcome === 'win'
+        ? aiDifficulty === 'hard'
+          ? 'Gold'
+          : aiDifficulty === 'medium'
+          ? 'Silver'
+          : 'Bronze'
+        : undefined;
+
+    recordMatchOutcome({
+      matchId: `stat_arena_${Date.now()}`,
+      gameId: 'stat_arena',
+      isOnline: false,
+      outcome,
+      customCoinsReward: coins,
+      awardSantraChest: chestTier,
+    });
+    onFinishSave();
+  };
+
+  if (phase === 'setup') {
+    return (
+      <div className="max-w-2xl mx-auto px-4 py-6 pb-28 animate-fade-in">
         <button
-          onClick={onBack}
-          className="flex items-center gap-1.5 text-xs text-amber-400 font-tajawal hover:text-amber-300"
-        >
-          <ArrowRight className="w-4 h-4" />
-          <span>خروج من اللعبة</span>
-        </button>
-
-        <div className="text-center">
-          <h2 className="font-chakra font-black text-sm tracking-wider bg-gradient-to-r from-amber-200 to-amber-500 bg-clip-text text-transparent">
-            STAT ARENA
-          </h2>
-          <span className="text-[10px] text-zinc-400">تحدي التوقعات الإحصائية</span>
-        </div>
-
-        <div className="w-16" />
-      </div>
-
-      <div className="max-w-md mx-auto px-4 py-4">
-        {/* ================= 1. SETUP SCREEN ================= */}
-        {inSetup && (
-          <div className="space-y-4">
-            {/* Game Cover Art */}
-            <div className="relative rounded-2xl overflow-hidden border border-amber-500/30 aspect-[16/9] shadow-xl">
-              <img
-                src="/src/assets/images/stat_arena_cover_1790797310047.jpg"
-                alt="STAT ARENA"
-                className="w-full h-full object-cover"
-              />
-              <div className="absolute inset-0 bg-gradient-to-t from-black via-black/40 to-transparent flex flex-col justify-end p-4">
-                <span className="text-xs font-chakra font-bold text-amber-400 uppercase tracking-widest">
-                  COMPETITIVE PREDICTION ARENA
-                </span>
-                <h3 className="text-xl font-black font-tajawal text-white">
-                  تحدي أرقام وإحصائيات كرة القدم
-                </h3>
-              </div>
-            </div>
-
-            {/* Mode Selection */}
-            <div className="bg-zinc-900/90 rounded-2xl p-4 border border-zinc-800 space-y-3">
-              {/* Player Names Input */}
-              <div className="space-y-2 pb-2 border-b border-zinc-800">
-                <label className="text-xs font-bold text-amber-400 block font-tajawal">
-                  أسماء اللاعبين (Player Names):
-                </label>
-                <div className="grid grid-cols-2 gap-2">
-                  <div>
-                    <span className="text-[10px] text-zinc-400 font-tajawal block mb-1">اللاعب 1:</span>
-                    <input
-                      type="text"
-                      value={p1CustomName}
-                      onChange={e => setP1CustomName(e.target.value)}
-                      className="w-full bg-black/60 border border-zinc-700 rounded-xl px-3 py-2 text-xs font-bold text-amber-300 focus:outline-none focus:border-amber-400 text-center"
-                      placeholder="اسمك"
-                    />
-                  </div>
-                  <div>
-                    <span className="text-[10px] text-zinc-400 font-tajawal block mb-1">اللاعب 2:</span>
-                    <input
-                      type="text"
-                      value={p2CustomName}
-                      onChange={e => setP2CustomName(e.target.value)}
-                      disabled={opponentType === 'cpu'}
-                      className="w-full bg-black/60 border border-zinc-700 rounded-xl px-3 py-2 text-xs font-bold text-zinc-200 focus:outline-none focus:border-amber-400 text-center disabled:opacity-50"
-                      placeholder="اسم المنافس"
-                    />
-                  </div>
-                </div>
-              </div>
-
-              <label className="text-xs font-bold text-amber-400 block font-tajawal">
-                اختر نظام الجولات (التسلسل التلقائي للمراكز):
-              </label>
-
-              <div className="grid grid-cols-2 gap-2">
-                <button
-                  onClick={() => setMode('quick_five')}
-                  className={`p-3 rounded-xl border text-center transition-all ${
-                    mode === 'quick_five'
-                      ? 'border-amber-400 bg-amber-500/10 text-amber-300'
-                      : 'border-zinc-800 bg-black/40 text-zinc-400'
-                  }`}
-                >
-                  <p className="font-chakra font-bold text-sm">Quick Five</p>
-                  <p className="text-[10px] text-zinc-400 mt-1">5 مراكز (GK, DEF, MID, 2 ATT)</p>
-                </button>
-
-                <button
-                  onClick={() => setMode('full_eleven')}
-                  className={`p-3 rounded-xl border text-center transition-all ${
-                    mode === 'full_eleven'
-                      ? 'border-amber-400 bg-amber-500/10 text-amber-300'
-                      : 'border-zinc-800 bg-black/40 text-zinc-400'
-                  }`}
-                >
-                  <p className="font-chakra font-bold text-sm">Full Eleven</p>
-                  <p className="text-[10px] text-zinc-400 mt-1">11 مركزاً (تشكيلة كاملة)</p>
-                </button>
-              </div>
-
-              {/* Opponent Selection */}
-              <label className="text-xs font-bold text-amber-400 block font-tajawal pt-2">
-                اختر نوع المنافسة:
-              </label>
-
-              <div className="grid grid-cols-2 gap-2">
-                <button
-                  onClick={() => setOpponentType('cpu')}
-                  className={`p-3 rounded-xl border flex items-center justify-center gap-2 transition-all ${
-                    opponentType === 'cpu'
-                      ? 'border-amber-400 bg-amber-500/10 text-amber-300'
-                      : 'border-zinc-800 bg-black/40 text-zinc-400'
-                  }`}
-                >
-                  <Bot className="w-4 h-4" />
-                  <span className="text-xs font-tajawal font-bold">ضد الكمبيوتر</span>
-                </button>
-
-                <button
-                  onClick={() => setOpponentType('same_device')}
-                  className={`p-3 rounded-xl border flex items-center justify-center gap-2 transition-all ${
-                    opponentType === 'same_device'
-                      ? 'border-amber-400 bg-amber-500/10 text-amber-300'
-                      : 'border-zinc-800 bg-black/40 text-zinc-400'
-                  }`}
-                >
-                  <User className="w-4 h-4" />
-                  <span className="text-xs font-tajawal font-bold">صديق (نفس الجهاز)</span>
-                </button>
-              </div>
-
-              {/* CPU Difficulty if CPU */}
-              {opponentType === 'cpu' ? (
-                <div className="pt-2">
-                  <span className="text-[11px] text-zinc-400 block mb-1.5 font-tajawal">مستوى ذكاء الكمبيوتر:</span>
-                  <div className="grid grid-cols-4 gap-1">
-                    {(['Rookie', 'Pro', 'Elite', 'Legend'] as CpuDifficulty[]).map(diff => (
-                      <button
-                        key={diff}
-                        onClick={() => setCpuDifficulty(diff)}
-                        className={`py-1.5 px-2 rounded-lg text-xs font-chakra transition-all ${
-                          cpuDifficulty === diff
-                            ? 'bg-amber-500 text-black font-bold'
-                            : 'bg-zinc-800 text-zinc-400 hover:text-zinc-200'
-                        }`}
-                      >
-                        {diff}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-              ) : (
-                <div className="pt-2">
-                  <span className="text-[11px] text-zinc-400 block mb-1 font-tajawal">اسم المنافس:</span>
-                  <input
-                    type="text"
-                    value={p2CustomName}
-                    onChange={e => setP2CustomName(e.target.value)}
-                    className="w-full bg-black/50 border border-zinc-700 rounded-xl px-3 py-2 text-xs text-zinc-200 focus:outline-none focus:border-amber-400"
-                    placeholder="اسم اللاعب الثاني"
-                  />
-                </div>
-              )}
-
-              <GoldButton onClick={startMatch} fullWidth size="lg" className="mt-4">
-                بدء التحدي الآن
-              </GoldButton>
-            </div>
-          </div>
-        )}
-
-        {/* ================= 2. ACTIVE CHALLENGE SCREEN ================= */}
-        {!inSetup && !challengeFinished && currentQ && (
-          <div className="space-y-4">
-            {/* Header Score & Position Status */}
-            <div className="bg-zinc-900/90 rounded-2xl p-3 border border-zinc-800 flex items-center justify-between">
-              {/* P1 Score */}
-              <div className="text-center">
-                <span className="text-[10px] text-zinc-400 block font-tajawal">{p1CustomName}</span>
-                <span className="font-chakra font-black text-amber-400 text-xl tabular-nums">
-                  {p1DiffSum}
-                </span>
-                <span className="text-[9px] text-zinc-500 block">فارق التوقعات</span>
-              </div>
-
-              {/* Center Round & Position Indicator */}
-              <div className="text-center px-3 py-1 bg-black/60 rounded-xl border border-amber-500/30">
-                <div className="text-[10px] text-amber-400 font-chakra font-bold">
-                  الجولة {currentRoundIndex + 1} / {positions.length}
-                </div>
-                <div className="text-sm font-chakra font-black text-white mt-0.5">
-                  مركز: <span className="text-amber-300">{currentPos}</span>
-                </div>
-              </div>
-
-              {/* P2 Score */}
-              <div className="text-center">
-                <span className="text-[10px] text-zinc-400 block font-tajawal">
-                  {opponentType === 'cpu' ? `الكمبيوتر` : p2CustomName}
-                </span>
-                <span className="font-chakra font-black text-zinc-200 text-xl tabular-nums">
-                  {p2DiffSum}
-                </span>
-                <span className="text-[9px] text-zinc-500 block">فارق التوقعات</span>
-              </div>
-            </div>
-
-            {/* Question Card */}
-            <div className="bg-[#12141a] rounded-2xl border border-amber-500/40 p-4 shadow-xl relative overflow-hidden space-y-3">
-              {/* Question Category & Season */}
-              <div className="flex items-center justify-between text-xs text-zinc-400 font-chakra pb-2 border-b border-zinc-800">
-                <span className="text-amber-400 font-bold font-tajawal">{currentQ.category}</span>
-                <span>الموسم: {currentQ.season}</span>
-              </div>
-
-              {/* Player Image & Name */}
-              <div className="flex items-center gap-3 bg-black/40 p-3 rounded-xl border border-zinc-800">
-                <div className="w-14 h-14 rounded-full overflow-hidden border-2 border-amber-400 bg-zinc-800 shrink-0 shadow">
-                  <img
-                    src={currentQ.playerImage || (currentQ.playerId ? `/players/${currentQ.playerId}.jpg` : '')}
-                    alt={currentQ.player}
-                    className="w-full h-full object-cover object-top"
-                  />
-                </div>
-
-                <div>
-                  <h4 className="font-bold text-base font-tajawal text-zinc-100">
-                    {currentQ.player}
-                  </h4>
-                  <p className="text-xs text-amber-400/80 font-tajawal">
-                    {currentQ.statisticType}
-                  </p>
-                </div>
-              </div>
-
-              {/* Statistical Question Prompt */}
-              <div className="p-3 rounded-xl bg-zinc-900/90 border border-zinc-800 text-right">
-                <p className="text-sm font-tajawal text-zinc-200 font-medium leading-relaxed">
-                  {currentQ.question}
-                </p>
-                {currentQ.hint && (
-                  <p className="text-[11px] text-zinc-400 mt-2 font-tajawal flex items-center gap-1">
-                    <HelpCircle className="w-3 h-3 text-amber-400 shrink-0" />
-                    <span>تلميح: {currentQ.hint}</span>
-                  </p>
-                )}
-              </div>
-
-              {/* ================= INPUT PHASE (NOT REVEALED) ================= */}
-              {!roundRevealed && (
-                <div className="space-y-3 pt-2">
-                  {!waitingForP2Turn ? (
-                    // Player 1 Input
-                    <div className="space-y-2">
-                      <label className="text-xs text-zinc-400 block font-tajawal">
-                        إجابة <span className="text-amber-400 font-bold">{p1CustomName}</span>:
-                      </label>
-                      <div className="flex items-center gap-2">
-                        <input
-                          type="number"
-                          value={p1Answer}
-                          onChange={e => setP1Answer(e.target.value)}
-                          placeholder="أدخل رقماً..."
-                          className="flex-1 bg-black/60 border border-amber-500/40 rounded-xl px-4 py-3 text-lg font-chakra font-bold text-amber-300 focus:outline-none focus:ring-1 focus:ring-amber-400 text-center"
-                        />
-                        <GoldButton onClick={handleP1Submit} disabled={!p1Answer.trim()}>
-                          تأكيد الإجابة
-                        </GoldButton>
-                      </div>
-                    </div>
-                  ) : (
-                    // Player 2 Input (Same Device)
-                    <div className="space-y-2">
-                      <label className="text-xs text-zinc-400 block font-tajawal">
-                        إجابة <span className="text-amber-400 font-bold">{p2CustomName}</span>:
-                      </label>
-                      <div className="flex items-center gap-2">
-                        <input
-                          type="number"
-                          value={p2Answer}
-                          onChange={e => setP2Answer(e.target.value)}
-                          placeholder="أدخل رقماً..."
-                          className="flex-1 bg-black/60 border border-amber-500/40 rounded-xl px-4 py-3 text-lg font-chakra font-bold text-amber-300 focus:outline-none focus:ring-1 focus:ring-amber-400 text-center"
-                        />
-                        <GoldButton onClick={handleP2Submit} disabled={!p2Answer.trim()}>
-                          تأكيد الإجابة
-                        </GoldButton>
-                      </div>
-                    </div>
-                  )}
-                </div>
-              )}
-
-              {/* ================= REVEAL PHASE ================= */}
-              {roundRevealed && (
-                <div className="space-y-3 pt-2 border-t border-zinc-800">
-                  {/* Correct Answer Banner */}
-                  <div className="bg-amber-500/15 border border-amber-500/40 rounded-xl p-3 text-center">
-                    <span className="text-[11px] text-amber-400 font-tajawal block">الإجابة الإحصائية الدقيقة:</span>
-                    <span className="font-chakra font-black text-3xl text-amber-300 tabular-nums">
-                      {currentQ.correctAnswer}
-                    </span>
-                    <span className="text-[10px] text-zinc-400 block mt-1">المصدر: {currentQ.source}</span>
-                  </div>
-
-                  {/* Answers Comparison */}
-                  <div className="grid grid-cols-2 gap-2 text-center text-xs font-tajawal">
-                    <div className="bg-zinc-900 p-2.5 rounded-xl border border-zinc-800">
-                      <p className="text-zinc-400">{p1CustomName}:</p>
-                      <p className="font-chakra font-bold text-lg text-white mt-0.5">{p1Answer}</p>
-                      <p className="text-[11px] text-zinc-400 mt-1">
-                        الفارق: <span className="font-chakra text-amber-400 font-bold">{Math.abs(Number(p1Answer) - currentQ.correctAnswer)}</span>
-                      </p>
-                    </div>
-
-                    <div className="bg-zinc-900 p-2.5 rounded-xl border border-zinc-800">
-                      <p className="text-zinc-400">
-                        {opponentType === 'cpu' ? `الكمبيوتر` : p2CustomName}:
-                      </p>
-                      <p className="font-chakra font-bold text-lg text-white mt-0.5">{p2Answer}</p>
-                      <p className="text-[11px] text-zinc-400 mt-1">
-                        الفارق: <span className="font-chakra text-amber-400 font-bold">{Math.abs(Number(p2Answer) - currentQ.correctAnswer)}</span>
-                      </p>
-                    </div>
-                  </div>
-
-                  {/* Round Winner & Loser Reward Card */}
-                  <div className="p-3 rounded-xl bg-zinc-900/90 border border-amber-500/30 text-center space-y-1">
-                    <p className="text-xs font-bold font-tajawal text-amber-300">
-                      {lastRoundWinner === 'p1'
-                        ? `🏆 فاز ${p1CustomName} بالجولة لتوقعه الأدق!`
-                        : lastRoundWinner === 'p2'
-                        ? `🏆 فاز ${opponentType === 'cpu' ? 'الكمبيوتر' : p2CustomName} بالجولة لتوقعه الأدق!`
-                        : '🤝 تعادل كامل في دقة التوقع!'}
-                    </p>
-
-                    {loserReward && (
-                      <div className="flex items-center gap-2.5 p-2 bg-black/60 rounded-xl border border-amber-500/30 text-right mt-1.5 animate-fade-in">
-                        <div className="w-12 h-12 rounded-xl overflow-hidden border border-amber-400 shrink-0 bg-zinc-900">
-                          <img
-                            src={loserReward.player.image || `/players/${loserReward.player.id}.jpg`}
-                            alt={loserReward.player.name}
-                            className="w-full h-full object-cover object-top"
-                          />
-                        </div>
-                        <div className="flex-1 min-w-0">
-                          <div className="flex items-center gap-1.5">
-                            <span className="font-chakra font-black text-amber-400 text-xs">
-                              {loserReward.player.ovr} OVR
-                            </span>
-                            <span className="text-[9px] bg-amber-500/20 text-amber-300 px-1 py-0.2 rounded font-chakra font-bold">
-                              {loserReward.player.position}
-                            </span>
-                          </div>
-                          <p className="text-xs font-bold text-white font-tajawal truncate mt-0.5">
-                            {loserReward.player.name}
-                          </p>
-                          <p className="text-[10px] text-zinc-400 font-tajawal truncate">
-                            🎁 جائزة الخاسر ({loserReward.recipient}) · {loserReward.player.club}
-                          </p>
-                        </div>
-                      </div>
-                    )}
-                  </div>
-
-                  <GoldButton onClick={handleNextRound} fullWidth size="lg">
-                    {currentRoundIndex + 1 < positions.length ? 'الانتقال للجولة التالية' : 'عرض التشكيلتين ومحاكاة المباراة'}
-                  </GoldButton>
-                </div>
-              )}
-            </div>
-
-            {/* Live Squad Formations Pitch Under Game */}
-            <LiveSquadPitch
-              p1Name={p1CustomName}
-              p2Name={opponentType === 'cpu' ? 'الكمبيوتر' : p2CustomName}
-              p1Squad={p1Squad}
-              p2Squad={p2Squad}
-              positions={positions}
-              currentRoundIndex={currentRoundIndex}
-              mode={mode}
-              isCpu={opponentType === 'cpu'}
-            />
-          </div>
-        )}
-
-        {/* ================= 3. SQUAD COMPARISON & 2D SIMULATION ================= */}
-        {challengeFinished && (
-          <div className="space-y-4">
-            {/* Challenge Summary Banner */}
-            <div className="bg-zinc-900/90 rounded-2xl p-4 border border-amber-500/40 text-center space-y-2">
-              <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-amber-500/10 border border-amber-500/30 text-amber-400 text-xs font-chakra font-bold">
-                <Award className="w-3.5 h-3.5" />
-                نهاية مرحلة التحدي الإحصائي
-              </div>
-
-              <h3 className="text-lg font-bold font-tajawal text-white">
-                {challengeAdvantage === 'p1'
-                  ? `أفضلية (1 - 0) لصالح ${p1CustomName}!`
-                  : challengeAdvantage === 'p2'
-                  ? `أفضلية (1 - 0) لصالح ${opponentType === 'cpu' ? 'الكمبيوتر' : p2CustomName}!`
-                  : 'تعادل في مجموع الفوارق - بداية متكافئة (0 - 0)!'}
-              </h3>
-
-              <div className="flex justify-around text-xs font-chakra pt-2 border-t border-zinc-800">
-                <div>
-                  <span className="text-zinc-400 font-tajawal block">{p1CustomName}</span>
-                  <span className="font-bold text-amber-400 text-base">{p1DiffSum} فارق إجمالي</span>
-                </div>
-                <div>
-                  <span className="text-zinc-400 font-tajawal block">
-                    {opponentType === 'cpu' ? 'الكمبيوتر' : p2CustomName}
-                  </span>
-                  <span className="font-bold text-zinc-200 text-base">{p2DiffSum} فارق إجمالي</span>
-                </div>
-              </div>
-            </div>
-
-            {/* Squad Previews */}
-            <div className="space-y-2">
-              <h4 className="text-xs font-bold text-amber-400 font-tajawal">
-                تشكيلة اللاعبين المكتسبة خلال الجولات:
-              </h4>
-
-              <div className="bg-zinc-900 rounded-xl p-3 border border-zinc-800">
-                <p className="text-xs font-tajawal font-bold text-zinc-300 mb-2">
-                  تشكيلة {p1CustomName} ({p1Squad.length} لاعبين)
-                </p>
-                <div className="flex gap-2 overflow-x-auto pb-1">
-                  {p1Squad.length === 0 ? (
-                    <p className="text-[11px] text-zinc-500 font-tajawal">لم يتلق أي لاعبين خاسرين (فاز بجميع الجولات!)</p>
-                  ) : (
-                    p1Squad.map((p, idx) => (
-                      <div key={idx} className="shrink-0 p-2 rounded-xl bg-black/60 border border-zinc-800 text-center w-20 flex flex-col items-center">
-                        <div className="w-10 h-10 rounded-full overflow-hidden border border-amber-400/60 bg-zinc-900 mb-1">
-                          <img
-                            src={p.image || `/players/${p.id}.jpg`}
-                            alt={p.name}
-                            className="w-full h-full object-cover object-top"
-                          />
-                        </div>
-                        <span className="text-[9px] text-amber-400 font-chakra font-bold">{p.position}</span>
-                        <p className="text-[10px] font-bold truncate text-zinc-100 w-full">{p.name}</p>
-                        <p className="text-[9px] text-zinc-400 font-chakra">{p.ovr} OVR</p>
-                      </div>
-                    ))
-                  )}
-                </div>
-              </div>
-
-              <div className="bg-zinc-900 rounded-xl p-3 border border-zinc-800">
-                <p className="text-xs font-tajawal font-bold text-zinc-300 mb-2">
-                  تشكيلة {opponentType === 'cpu' ? 'الكمبيوتر' : p2CustomName} ({p2Squad.length} لاعبين)
-                </p>
-                <div className="flex gap-2 overflow-x-auto pb-1">
-                  {p2Squad.length === 0 ? (
-                    <p className="text-[11px] text-zinc-500 font-tajawal">لم يتلق أي لاعبين خاسرين</p>
-                  ) : (
-                    p2Squad.map((p, idx) => (
-                      <div key={idx} className="shrink-0 p-2 rounded-xl bg-black/60 border border-zinc-800 text-center w-20 flex flex-col items-center">
-                        <div className="w-10 h-10 rounded-full overflow-hidden border border-amber-400/60 bg-zinc-900 mb-1">
-                          <img
-                            src={p.image || `/players/${p.id}.jpg`}
-                            alt={p.name}
-                            className="w-full h-full object-cover object-top"
-                          />
-                        </div>
-                        <span className="text-[9px] text-amber-400 font-chakra font-bold">{p.position}</span>
-                        <p className="text-[10px] font-bold truncate text-zinc-100 w-full">{p.name}</p>
-                        <p className="text-[9px] text-zinc-400 font-chakra">{p.ovr} OVR</p>
-                      </div>
-                    ))
-                  )}
-                </div>
-              </div>
-            </div>
-
-            {/* Launch 2D Match Simulation */}
-            <GoldButton onClick={() => setShowSimScreen(true)} fullWidth size="lg">
-              <Trophy className="w-4 h-4 fill-black" />
-              انطلاق شاشة محاكاة المباراة التكتيكية (2D)
-            </GoldButton>
-          </div>
-        )}
-      </div>
-
-      {/* Same Device Pass The Phone Modal */}
-      {showPassModal && (
-        <PassThePhoneModal
-          nextPlayerName={p2CustomName}
-          onReady={() => setShowPassModal(false)}
-        />
-      )}
-
-      {/* 2D Match Simulation Screen */}
-      {showSimScreen && (
-        <MatchSimulationScreen
-          team1Name={p1CustomName}
-          team2Name={opponentType === 'cpu' ? `الكمبيوتر (${cpuDifficulty})` : p2CustomName}
-          team1Squad={p1Squad.length > 0 ? p1Squad : [getRandomPlayerByPosition('ATT')]}
-          team2Squad={p2Squad.length > 0 ? p2Squad : [getRandomPlayerByPosition('ATT')]}
-          advantageGoalsTeam1={challengeAdvantage === 'p1' ? 1 : 0}
-          advantageGoalsTeam2={challengeAdvantage === 'p2' ? 1 : 0}
-          onFinishMatch={(winner, coins) => {
-            onGameComplete(winner === 'team1' ? 'p1' : winner === 'team2' ? 'p2' : 'draw', coins);
-          }}
-          onClose={() => {
-            setShowSimScreen(false);
+          onClick={() => {
+            sounds.playTap();
             onBack();
           }}
+          className="flex items-center gap-2 text-zinc-400 hover:text-white mb-5 text-sm font-bold"
+        >
+          <ArrowRight className="w-4 h-4" />
+          <span>العودة إلى الألعاب</span>
+        </button>
+
+        <div className="bg-zinc-900/95 border border-amber-500/30 rounded-3xl p-6 space-y-6 shadow-2xl">
+          <div className="text-center space-y-2">
+            <span className="inline-block px-3 py-1 rounded-full bg-amber-500/15 border border-amber-500/30 text-amber-300 text-xs font-bold">
+              STAT ARENA — ساحة الإحصائيات التنافسية
+            </span>
+            <h2 className="text-2xl font-black text-white">إعدادات المواجهة التكتيكية</h2>
+            <p className="text-xs text-zinc-400">
+              صاحب التخمين الأقرب للإحصائية الحقيقية يخطف اللاعب الأقوى في المركز المستهدف!
+            </p>
+          </div>
+
+          {/* Play Type */}
+          <div className="space-y-2">
+            <label className="text-xs font-bold text-zinc-300 block">نظام اللعب</label>
+            <div className="grid grid-cols-2 gap-3">
+              <button
+                onClick={() => {
+                  sounds.playTap();
+                  setPlayType('solo_ai');
+                }}
+                className={`p-3.5 rounded-2xl border text-right transition-all flex items-center gap-3 ${
+                  playType === 'solo_ai'
+                    ? 'bg-amber-500/15 border-amber-500 text-white shadow-lg'
+                    : 'bg-zinc-950/60 border-zinc-800 text-zinc-400'
+                }`}
+              >
+                <Bot className="w-6 h-6 text-amber-400 shrink-0" />
+                <div>
+                  <div className="font-black text-sm">ضد الذكاء الاصطناعي (AI)</div>
+                  <div className="text-[10px] text-zinc-400">مواجهة فردية فورية</div>
+                </div>
+              </button>
+              <button
+                onClick={() => {
+                  sounds.playTap();
+                  setPlayType('local_2p');
+                }}
+                className={`p-3.5 rounded-2xl border text-right transition-all flex items-center gap-3 ${
+                  playType === 'local_2p'
+                    ? 'bg-amber-500/15 border-amber-500 text-white shadow-lg'
+                    : 'bg-zinc-950/60 border-zinc-800 text-zinc-400'
+                }`}
+              >
+                <Users className="w-6 h-6 text-sky-400 shrink-0" />
+                <div>
+                  <div className="font-black text-sm">لاعبان محليًا (2P)</div>
+                  <div className="text-[10px] text-zinc-400">على نفس الجهاز</div>
+                </div>
+              </button>
+            </div>
+          </div>
+
+          {playType === 'solo_ai' && (
+            <div className="space-y-2">
+              <label className="text-xs font-bold text-zinc-300 block">
+                دقة الذكاء الاصطناعي (Difficulty)
+              </label>
+              <div className="grid grid-cols-3 gap-2.5">
+                {[
+                  { id: 'easy', label: 'سهل (Easy)' },
+                  { id: 'medium', label: 'متوسط (Medium)' },
+                  { id: 'hard', label: 'خبير إحصائيات (Hard)' },
+                ].map((d) => (
+                  <button
+                    key={d.id}
+                    onClick={() => {
+                      sounds.playTap();
+                      setAiDifficulty(d.id as 'easy' | 'medium' | 'hard');
+                    }}
+                    className={`py-2.5 px-3 rounded-xl border text-xs font-black transition-all ${
+                      aiDifficulty === d.id
+                        ? 'bg-amber-500/20 border-amber-500 text-amber-300'
+                        : 'bg-zinc-950 border-zinc-800 text-zinc-400'
+                    }`}
+                  >
+                    {d.label}
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* Mode Selection */}
+          <div className="space-y-2">
+            <label className="text-xs font-bold text-zinc-300 block">عدد الجولات</label>
+            <div className="grid grid-cols-2 gap-3">
+              <button
+                onClick={() => {
+                  sounds.playTap();
+                  setMode('quick_five');
+                }}
+                className={`p-3.5 rounded-2xl border text-right transition-all ${
+                  mode === 'quick_five'
+                    ? 'bg-amber-500/15 border-amber-500 text-white'
+                    : 'bg-zinc-950/60 border-zinc-800 text-zinc-400'
+                }`}
+              >
+                <div className="font-black text-sm">خماسية سريعة (5 جولات)</div>
+                <div className="text-[11px] opacity-75 mt-0.5">GK, DEF, MID, ATT, ATT</div>
+              </button>
+              <button
+                onClick={() => {
+                  sounds.playTap();
+                  setMode('full_eleven');
+                }}
+                className={`p-3.5 rounded-2xl border text-right transition-all ${
+                  mode === 'full_eleven'
+                    ? 'bg-amber-500/15 border-amber-500 text-white'
+                    : 'bg-zinc-950/60 border-zinc-800 text-zinc-400'
+                }`}
+              >
+                <div className="font-black text-sm">تشكيلة كاملة (11 جولة)</div>
+                <div className="text-[11px] opacity-75 mt-0.5">11 مركزًا كاملًا</div>
+              </button>
+            </div>
+          </div>
+
+          {/* Players & Formations */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <div className="p-4 rounded-2xl bg-zinc-950/80 border border-zinc-800 space-y-3">
+              <span className="text-xs font-black text-amber-400 block">اللاعب الأول</span>
+              <input
+                type="text"
+                value={p1Name}
+                onChange={(e) => setP1Name(e.target.value)}
+                className="w-full bg-zinc-900 border border-zinc-700 rounded-xl px-3 py-2 text-white text-sm font-bold"
+              />
+              <select
+                value={p1Formation}
+                onChange={(e) => setP1Formation(e.target.value as FormationType)}
+                className="w-full bg-zinc-900 border border-zinc-700 rounded-xl px-3 py-2 text-white text-xs font-bold"
+              >
+                <option value="4-3-3">4-3-3 هجومي</option>
+                <option value="4-4-2">4-4-2 كلاسيكي</option>
+                <option value="4-2-3-1">4-2-3-1 استحواذ</option>
+                <option value="3-5-2">3-5-2 سيطرة وسط</option>
+                <option value="5-3-2">5-3-2 مرتدات</option>
+              </select>
+            </div>
+
+            <div className="p-4 rounded-2xl bg-zinc-950/80 border border-zinc-800 space-y-3">
+              <span className="text-xs font-black text-sky-400 block">
+                {playType === 'solo_ai' ? 'المنافس الذكي (AI)' : 'اللاعب الثاني'}
+              </span>
+              <input
+                type="text"
+                value={p2Name}
+                onChange={(e) => setP2Name(e.target.value)}
+                className="w-full bg-zinc-900 border border-zinc-700 rounded-xl px-3 py-2 text-white text-sm font-bold"
+              />
+              <select
+                value={p2Formation}
+                onChange={(e) => setP2Formation(e.target.value as FormationType)}
+                className="w-full bg-zinc-900 border border-zinc-700 rounded-xl px-3 py-2 text-white text-xs font-bold"
+              >
+                <option value="4-3-3">4-3-3 هجومي</option>
+                <option value="4-4-2">4-4-2 كلاسيكي</option>
+                <option value="4-2-3-1">4-2-3-1 استحواذ</option>
+                <option value="3-5-2">3-5-2 سيطرة وسط</option>
+                <option value="5-3-2">5-3-2 مرتدات</option>
+              </select>
+            </div>
+          </div>
+
+          <GoldButton fullWidth size="lg" onClick={startGame}>
+            انطلاق المواجهة الآن (START STAT ARENA)
+          </GoldButton>
+        </div>
+      </div>
+    );
+  }
+
+  if (phase === 'pass') {
+    const nextPos = activePlayer === 1 ? p1Positions[currentRound] : p2Positions[currentRound];
+    return (
+      <PassThePhoneModal
+        nextPlayerName={activePlayer === 1 ? p1Name : p2Name}
+        subtitleAr={`الجولة ${currentRound + 1} من ${totalRounds} — المركز: ${getPositionLabelAr(
+          nextPos
+        )}`}
+        onReady={() => {
+          setTimeLeft(20);
+          setPhase('playing');
+        }}
+      />
+    );
+  }
+
+  if (phase === 'reveal') {
+    const q = questions[currentRound];
+    return (
+      <div className="max-w-3xl mx-auto px-4 py-6 pb-28 space-y-6 animate-fade-in">
+        <div className="bg-zinc-900 border border-amber-500/40 rounded-3xl p-6 text-center space-y-4 shadow-2xl">
+          <span className="text-xs font-bold text-amber-400">
+            نتيجة الجولة {currentRound + 1} من {totalRounds}
+          </span>
+          <h3 className="text-lg font-bold text-zinc-200">{q.question}</h3>
+
+          <div className="py-3 px-6 rounded-2xl bg-amber-500/15 border border-amber-500/30 inline-block">
+            <span className="text-xs text-amber-300 block mb-1">الإجابة الصحيحة المعتمدة</span>
+            <span className="font-chakra text-4xl font-black text-amber-400 tabular-nums">
+              {q.correctAnswer}{' '}
+              <small className="text-sm font-tajawal">{q.statisticType}</small>
+            </span>
+          </div>
+
+          <div className="grid grid-cols-2 gap-4 pt-2">
+            <div
+              className={`p-4 rounded-2xl border ${
+                roundWinner === 1 || roundWinner === 'draw'
+                  ? 'bg-emerald-950/30 border-emerald-500/50'
+                  : 'bg-zinc-950/60 border-zinc-800'
+              }`}
+            >
+              <div className="text-xs font-bold text-zinc-400 mb-1">{p1Name}</div>
+              <div className="font-chakra text-2xl font-black text-white tabular-nums">
+                {p1Answer}
+              </div>
+              <div className="text-[11px] text-zinc-400 mt-1">
+                الفرق: {Math.abs(q.correctAnswer - p1Answer)}
+              </div>
+              {lastAwardedP1 && (
+                <div className="mt-4 flex flex-col items-center">
+                  <span className="text-[10px] font-bold text-amber-300 mb-2">
+                    اللاعب الممنوح ({lastAwardedP1.position}):
+                  </span>
+                  <PlayerCard player={lastAwardedP1} size="sm" showStats={false} />
+                </div>
+              )}
+            </div>
+
+            <div
+              className={`p-4 rounded-2xl border ${
+                roundWinner === 2 || roundWinner === 'draw'
+                  ? 'bg-emerald-950/30 border-emerald-500/50'
+                  : 'bg-zinc-950/60 border-zinc-800'
+              }`}
+            >
+              <div className="text-xs font-bold text-zinc-400 mb-1">{p2Name}</div>
+              <div className="font-chakra text-2xl font-black text-white tabular-nums">
+                {p2Answer}
+              </div>
+              <div className="text-[11px] text-zinc-400 mt-1">
+                الفرق: {Math.abs(q.correctAnswer - p2Answer)}
+              </div>
+              {lastAwardedP2 && (
+                <div className="mt-4 flex flex-col items-center">
+                  <span className="text-[10px] font-bold text-amber-300 mb-2">
+                    اللاعب الممنوح ({lastAwardedP2.position}):
+                  </span>
+                  <PlayerCard player={lastAwardedP2} size="sm" showStats={false} />
+                </div>
+              )}
+            </div>
+          </div>
+
+          <GoldButton fullWidth size="lg" onClick={handleNextRound}>
+            {currentRound + 1 < totalRounds
+              ? `الانتقال للجولة ${currentRound + 2}`
+              : 'انطلاق صافرة محاكاة المباراة النهائية!'}
+          </GoldButton>
+        </div>
+      </div>
+    );
+  }
+
+  if (phase === 'simulating') {
+    return (
+      <MatchSimulationScreen
+        team1Name={p1Name}
+        team2Name={p2Name}
+        team1Squad={p1Squad}
+        team2Squad={p2Squad}
+        advantageGoalsTeam1={p1Score > p2Score ? 1 : 0}
+        advantageGoalsTeam2={p2Score > p1Score ? 1 : 0}
+        onFinishMatch={(winner, _rewardCoins, output) => {
+          setSimResult(output);
+          const outcome: 'win' | 'draw' | 'loss' =
+            winner === 'team1' ? 'win' : winner === 'draw' ? 'draw' : 'loss';
+          finalizeRewardsOnce(outcome);
+          setPhase('finished');
+          confetti({ particleCount: 120, spread: 80, origin: { y: 0.6 } });
+        }}
+        onClose={() => {
+          if (!rewardsSaved) {
+            const outcome: 'win' | 'draw' | 'loss' =
+              p1Score > p2Score ? 'win' : p1Score === p2Score ? 'draw' : 'loss';
+            finalizeRewardsOnce(outcome);
+          }
+          setPhase('finished');
+        }}
+      />
+    );
+  }
+
+  if (phase === 'finished') {
+    const ovr1 = calculateSquadRating(p1Squad);
+    const ovr2 = calculateSquadRating(p2Squad);
+    const total1 = p1Score * 10 + ovr1 + (simResult ? simResult.goalsP1 * 20 : 0);
+    const total2 = p2Score * 10 + ovr2 + (simResult ? simResult.goalsP2 * 20 : 0);
+    const winnerName = simResult
+      ? simResult.winner === 'team1'
+        ? p1Name
+        : simResult.winner === 'team2'
+        ? p2Name
+        : 'تعادل ملحمي!'
+      : total1 >= total2
+      ? p1Name
+      : p2Name;
+
+    const isP1Winner = simResult ? simResult.winner === 'team1' : total1 >= total2;
+    const isDraw = simResult ? simResult.winner === 'draw' : total1 === total2;
+
+    return (
+      <div className="max-w-3xl mx-auto px-4 py-8 pb-28 space-y-6 text-center animate-fade-in">
+        <div className="w-20 h-20 rounded-3xl bg-gradient-to-br from-amber-400 to-yellow-600 mx-auto flex items-center justify-center shadow-[0_0_40px_rgba(245,158,11,0.5)]">
+          <Trophy className="w-10 h-10 text-zinc-950" />
+        </div>
+        <div>
+          <span className="text-xs font-black uppercase tracking-widest text-amber-400">
+            نهاية المواجهة ومحاكاة الـ 90 دقيقة
+          </span>
+          <h2 className="text-3xl font-black text-white mt-1">
+            {isDraw ? 'تعادل تكتيكي مثير!' : `الفائز: ${winnerName} 🏆`}
+          </h2>
+          {simResult && (
+            <div className="inline-flex items-center gap-3 px-5 py-2 rounded-2xl bg-zinc-900 border border-amber-500/40 mt-2">
+              <span className="font-black text-amber-400">{p1Name}</span>
+              <span className="font-chakra text-2xl font-black text-white tabular-nums">
+                {simResult.goalsP1} - {simResult.goalsP2}
+              </span>
+              <span className="font-black text-sky-400">{p2Name}</span>
+            </div>
+          )}
+        </div>
+
+        {/* Rewards Summary */}
+        <div className="grid grid-cols-3 gap-3 max-w-lg mx-auto">
+          <div className="bg-zinc-900 border border-amber-500/30 rounded-2xl p-3">
+            <Coins className="w-5 h-5 text-amber-400 mx-auto mb-1" />
+            <div className="font-chakra text-lg font-black text-amber-300 tabular-nums">
+              +{isP1Winner ? 45 : isDraw ? 20 : 10}
+            </div>
+            <div className="text-[10px] text-zinc-400 font-bold">كوينز مضافة</div>
+          </div>
+          <div className="bg-zinc-900 border border-emerald-500/30 rounded-2xl p-3">
+            <Award className="w-5 h-5 text-emerald-400 mx-auto mb-1" />
+            <div className="font-chakra text-lg font-black text-emerald-400 tabular-nums">
+              +{isP1Winner ? 3 : isDraw ? 1 : 0} RP
+            </div>
+            <div className="text-[10px] text-zinc-400 font-bold">نقاط التصنيف</div>
+          </div>
+          <div className="bg-zinc-900 border border-purple-500/30 rounded-2xl p-3">
+            <Package className="w-5 h-5 text-purple-400 mx-auto mb-1" />
+            <div className="text-xs font-black text-purple-300">
+              {isP1Winner ? 'صندوق سانترا 3D' : 'بطاقات التشكيلة'}
+            </div>
+            <div className="text-[10px] text-zinc-400 font-bold">مكافأة الفوز</div>
+          </div>
+        </div>
+
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-6 text-right">
+          <div className="bg-zinc-900/90 border border-amber-500/30 rounded-3xl p-4 space-y-4">
+            <div className="flex justify-between items-center">
+              <span className="font-black text-lg text-amber-400">{p1Name}</span>
+              <span className="text-xs bg-amber-500/20 text-amber-300 px-3 py-1 rounded-full font-bold">
+                تقييم التشكيلة: {ovr1} • النقاط: {p1Score}
+              </span>
+            </div>
+            <PitchTactics players={p1Squad} formation={p1Formation} />
+          </div>
+
+          <div className="bg-zinc-900/90 border border-zinc-800 rounded-3xl p-4 space-y-4">
+            <div className="flex justify-between items-center">
+              <span className="font-black text-lg text-sky-400">{p2Name}</span>
+              <span className="text-xs bg-zinc-800 text-zinc-300 px-3 py-1 rounded-full font-bold">
+                تقييم التشكيلة: {ovr2} • النقاط: {p2Score}
+              </span>
+            </div>
+            <PitchTactics players={p2Squad} formation={p2Formation} />
+          </div>
+        </div>
+
+        <div className="flex flex-col sm:flex-row gap-3">
+          <GoldButton fullWidth onClick={startGame}>
+            <span className="flex items-center justify-center gap-2">
+              <RotateCcw className="w-4 h-4" />
+              إعادة اللعب (RESTART)
+            </span>
+          </GoldButton>
+          <GoldButton variant="secondary" fullWidth onClick={onBack}>
+            حفظ والعودة للرئيسية
+          </GoldButton>
+        </div>
+      </div>
+    );
+  }
+
+  // PLAYING PHASE
+  const currentQuestion = questions[currentRound];
+  const expectedPos = activePlayer === 1 ? p1Positions[currentRound] : p2Positions[currentRound];
+
+  return (
+    <div className="max-w-2xl mx-auto px-4 py-4 pb-28 space-y-5 animate-fade-in">
+      <div className="flex items-center justify-between bg-zinc-900/90 border border-zinc-800 rounded-2xl px-4 py-3">
+        <div>
+          <span className="text-xs text-zinc-400 block">
+            الجولة {currentRound + 1} من {totalRounds}
+          </span>
+          <span className="font-black text-sm text-amber-400">
+            دور: {activePlayer === 1 ? p1Name : p2Name}
+          </span>
+        </div>
+
+        <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2 px-3 py-1.5 rounded-xl bg-zinc-950 border border-amber-500/30">
+            <Clock
+              className={`w-4 h-4 ${timeLeft <= 5 ? 'text-rose-500 animate-ping' : 'text-amber-400'}`}
+            />
+            <span className="font-chakra text-lg font-black text-white tabular-nums">
+              {timeLeft}s
+            </span>
+          </div>
+          <button
+            onClick={onBack}
+            className="text-xs font-bold text-zinc-400 hover:text-white px-2.5 py-1.5 rounded-lg bg-zinc-800"
+          >
+            خروج
+          </button>
+        </div>
+      </div>
+
+      {/* Target Position Banner */}
+      <div className="p-3.5 rounded-2xl bg-gradient-to-r from-amber-500/15 via-amber-500/5 to-transparent border border-amber-500/30 flex items-center justify-between">
+        <div className="flex items-center gap-2.5">
+          <Sparkles className="w-5 h-5 text-amber-400" />
+          <div>
+            <div className="text-[11px] text-zinc-400">المركز المستهدف في هذه الجولة</div>
+            <div className="font-black text-sm text-white">
+              {getPositionLabelAr(expectedPos)} ({expectedPos})
+            </div>
+          </div>
+        </div>
+        <span className="px-3 py-1 rounded-lg bg-amber-500 text-zinc-950 font-chakra font-black text-sm">
+          {expectedPos}
+        </span>
+      </div>
+
+      {/* Question Card */}
+      <div className="bg-zinc-900 border border-zinc-800 rounded-3xl p-6 text-center space-y-6 shadow-xl">
+        <span className="inline-block px-3 py-1 rounded-full bg-zinc-800 text-zinc-300 text-xs font-bold">
+          سؤال إحصائي رسمي — {currentQuestion?.season}
+        </span>
+        <h3 className="text-xl sm:text-2xl font-black text-white leading-relaxed">
+          {currentQuestion?.question}
+        </h3>
+
+        <form onSubmit={handleSubmitAnswer} className="space-y-4">
+          <div>
+            <input
+              type="number"
+              inputMode="numeric"
+              autoFocus
+              required
+              value={inputValue}
+              onChange={(e) => setInputValue(e.target.value)}
+              placeholder="أدخل الرقم المتوقع..."
+              className="w-full text-center font-chakra text-3xl font-black bg-zinc-950 border-2 border-amber-500/40 focus:border-amber-400 rounded-2xl py-4 px-6 text-amber-300 focus:outline-none tabular-nums"
+            />
+            <span className="text-xs text-zinc-500 mt-1.5 block">
+              نوع الإحصائية: {currentQuestion?.statisticType}
+            </span>
+          </div>
+
+          <GoldButton type="submit" fullWidth size="lg">
+            <span className="flex items-center justify-center gap-2">
+              <CheckCircle2 className="w-5 h-5" />
+              تأكيد الإجابة
+            </span>
+          </GoldButton>
+        </form>
+      </div>
+
+      {/* Current Active Player Pitch Preview */}
+      <div className="space-y-2">
+        <h4 className="text-xs font-bold text-zinc-400">
+          تشكيلة {activePlayer === 1 ? p1Name : p2Name} الحالية:
+        </h4>
+        <PitchTactics
+          players={activePlayer === 1 ? p1Squad : p2Squad}
+          formation={activePlayer === 1 ? p1Formation : p2Formation}
+          selectedSlot={currentRound}
         />
-      )}
+      </div>
     </div>
   );
 };
